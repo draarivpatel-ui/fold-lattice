@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fold-lattice, 3D lattice protein folding</title>
+<meta name="description" content="Interactive 3D lattice protein folding with replica-exchange Monte Carlo, Ramachandran analysis and PDB export. Zero dependencies.">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0c0f14;
+    --panel: #121721;
+    --panel2: #171e2b;
+    --line: #26304a;
+    --text: #dfe6f3;
+    --muted: #8fa0bd;
+    --accent: #4ecdc4;
+    --accent2: #e0564e;
+    --warn: #e0b13e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 14px; line-height: 1.45;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 14px 20px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 20px; letter-spacing: 1px; color: var(--accent); }
+  header .tag { color: var(--muted); font-size: 12px; }
+  header .ver { color: var(--muted); font-size: 11px; margin-left: auto; }
+  main {
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) 360px;
+    gap: 14px; padding: 14px 20px;
+    max-width: 1400px; margin: 0 auto;
+  }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px;
+  }
+  .card h2 {
+    margin: 0 0 8px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: 2px; color: var(--muted);
+  }
+  #stageWrap { position: relative; }
+  #stage {
+    width: 100%; height: 480px; display: block;
+    background: radial-gradient(1200px 700px at 50% 40%, #131a27 0%, #0c0f14 70%);
+    border-radius: 8px; cursor: grab; touch-action: none;
+  }
+  #stage.dragging { cursor: grabbing; }
+  #stageHint {
+    position: absolute; left: 10px; bottom: 8px; font-size: 11px;
+    color: var(--muted); pointer-events: none;
+  }
+  #legend {
+    position: absolute; right: 10px; top: 8px; font-size: 11px;
+    background: rgba(12, 15, 20, 0.72); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 9px; pointer-events: none;
+    display: none;
+  }
+  #legend .row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  #legend .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  #residueCard {
+    position: absolute; left: 10px; top: 8px; font-size: 12px;
+    background: rgba(12, 15, 20, 0.85); border: 1px solid var(--accent);
+    border-radius: 8px; padding: 7px 10px; display: none; max-width: 240px;
+  }
+  #residueCard .x { color: var(--muted); cursor: pointer; float: right; }
+  .controls .row { display: flex; gap: 8px; margin: 8px 0; align-items: center; }
+  .controls label { color: var(--muted); font-size: 12px; min-width: 86px; }
+  .controls input[type="text"], .controls textarea, .controls select {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px; font: inherit; width: 100%;
+  }
+  .controls textarea { resize: vertical; min-height: 54px; }
+  .controls input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .controls .val { color: var(--accent); min-width: 44px; text-align: right; font-size: 12px; }
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #08131a; border-color: var(--accent); font-weight: 700; }
+  button.danger { border-color: var(--accent2); color: var(--accent2); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  #progressWrap { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; height: 18px; overflow: hidden; margin: 10px 0 4px; }
+  #progressBar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #3ec6a8); transition: width 120ms linear; }
+  #progressText { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+  .stat { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+  .stat .k { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; }
+  .stat .v { font-size: 16px; color: var(--text); margin-top: 2px; }
+  .stat .v small { color: var(--muted); font-size: 10px; }
+  .err { color: var(--accent2); font-size: 12px; min-height: 16px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 0 20px 20px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+  canvas.chart { width: 100%; height: 260px; display: block; border-radius: 8px; background: var(--panel2); }
+  #ribbon { display: flex; gap: 3px; overflow-x: auto; padding: 8px 2px 2px; }
+  #ribbon .res {
+    min-width: 26px; height: 30px; border-radius: 5px; display: flex;
+    align-items: center; justify-content: center; font-size: 12px; font-weight: 700;
+    color: #0b0e13; cursor: pointer; border: 1px solid transparent;
+  }
+  #ribbon .res.selected { border-color: #fff; }
+  footer { color: var(--muted); font-size: 11px; padding: 6px 20px 18px; max-width: 1400px; margin: 0 auto; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<header>
+  <h1>fold-lattice</h1>
+  <span class="tag">3D lattice protein folding, replica-exchange Monte Carlo, Ramachandran analysis, PDB export</span>
+  <span class="ver" id="verTag"></span>
+</header>
+
+<main>
+  <section class="card" id="stageWrap">
+    <h2>3D conformation</h2>
+    <canvas id="stage" width="800" height="480"></canvas>
+    <div id="stageHint">drag to rotate, scroll to zoom, click a bead to inspect</div>
+    <div id="legend"></div>
+    <div id="residueCard"><span class="x" id="resClose">×</span><span id="resBody"></span></div>
+    <div id="ribbon"></div>
+  </section>
+
+  <section class="card controls">
+    <h2>Folding run</h2>
+    <div class="row"><label for="seqInput">sequence</label>
+      <textarea id="seqInput" spellcheck="false">GAGSLYQGSSLAQSGFLSSHHSGF</textarea>
+    </div>
+    <div class="row"><label for="presetSel">presets</label>
+      <select id="presetSel">
+        <option value="">choose an example</option>
+        <option value="GAGSLYQGSSLAQSGFLSSHHSGF">mixed 24mer (MJ)</option>
+        <option value="SWTWENGKWTWK">tryptophan zipper like 12mer (MJ)</option>
+        <option value="SSSSAAAASSSSAAAASSSAA">block copolymer 21mer (HP)</option>
+        <option value="ACDEFGHIKLMNPQRSTVWYA">all twenty letters (MJ)</option>
+      </select>
+    </div>
+    <div class="row"><label for="modelSel">potential</label>
+      <select id="modelSel">
+        <option value="mj">Miyazawa Jernigan 1996</option>
+        <option value="hp">HP hydrophobic polar</option>
+      </select>
+    </div>
+    <div class="row"><label for="replicasR">replicas</label>
+      <input type="range" id="replicasR" min="2" max="10" step="1" value="6"><span class="val" id="replicasV">6</span>
+    </div>
+    <div class="row"><label for="sweepsR">sweeps</label>
+      <input type="range" id="sweepsR" min="50" max="1200" step="50" value="300"><span class="val" id="sweepsV">300</span>
+    </div>
+    <div class="row"><label for="colorSel">bead colors</label>
+      <select id="colorSel">
+        <option value="sequence">sequence rainbow</option>
+        <option value="ramachandran">Ramachandran region</option>
+        <option value="hydrophobic">hydrophobic vs polar</option>
+        <option value="element">element (all atom)</option>
+      </select>
+    </div>
+    <div class="row"><label for="showAll">all atom</label>
+      <select id="showAll">
+        <option value="no">lattice beads</option>
+        <option value="yes">N, CA, C, O backbone</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="foldBtn" class="primary">Fold</button>
+      <button id="stopBtn" class="danger" disabled>Stop</button>
+      <button id="pdbBtn" disabled>Export PDB</button>
+    </div>
+    <div class="err" id="errMsg"></div>
+    <div id="progressWrap"><div id="progressBar"></div></div>
+    <div id="progressText">idle</div>
+    <div class="stats">
+      <div class="stat"><div class="k">energy</div><div class="v" id="stEnergy">0.00 <small>RT</small></div></div>
+      <div class="stat"><div class="k">contacts</div><div class="v" id="stContacts">0</div></div>
+      <div class="stat"><div class="k">radius of gyration</div><div class="v" id="stRg">0.00</div></div>
+      <div class="stat"><div class="k">exchanges</div><div class="v" id="stExch">0</div></div>
+      <div class="stat"><div class="k">acceptance</div><div class="v" id="stAcc">0%</div></div>
+      <div class="stat"><div class="k">sweeps done</div><div class="v" id="stSweeps">0</div></div>
+    </div>
+    <h2 style="margin-top:14px">Analyze a PDB file</h2>
+    <div class="row"><input type="file" id="pdbFile" accept=".pdb,.ent,.txt" style="color:var(--muted)"></div>
+    <div class="err" id="pdbMsg"></div>
+  </section>
+</main>
+
+<div class="charts">
+  <section class="card"><h2>Best energy trace</h2><canvas id="traceChart" class="chart"></canvas></section>
+  <section class="card"><h2>Ramachandran map (rebuilt backbone)</h2><canvas id="ramaChart" class="chart"></canvas></section>
+</div>
+
+<footer>
+  Engine and tests: <a href="https://github.com/draarivpatel-ui/fold-lattice">github.com/draarivpatel-ui/fold-lattice</a>
+  · Contact energies from Miyazawa and Jernigan (1996), J. Mol. Biol. 256, 623 to 644 ·
+  Pull moves after Lesh, Mitzenmacher and Whitesides (2003).
+</footer>
+
+<script src="src/fold.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

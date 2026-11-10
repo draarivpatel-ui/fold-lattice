@@ -1,0 +1,26 @@
+{
+  "name": "fold-lattice",
+  "version": "1.0.0",
+  "description": "3D lattice protein folding with replica-exchange Monte Carlo, Ramachandran analysis and PDB export",
+  "main": "src/fold.js",
+  "scripts": {
+    "test": "node --test test/fold.test.js"
+  },
+  "keywords": [
+    "protein-folding",
+    "hp-model",
+    "miyazawa-jernigan",
+    "monte-carlo",
+    "replica-exchange",
+    "parallel-tempering",
+    "ramachandran",
+    "pdb",
+    "bioinformatics"
+  ],
+  "author": "draarivpatel-ui",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}
