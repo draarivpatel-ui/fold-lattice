@@ -1170,14 +1170,6 @@ function matMul(A, B) {
   return C;
 }
 
-function matVec(A, v) {
-  return [
-    A[0][0] * v[0] + A[0][1] * v[1] + A[0][2] * v[2],
-    A[1][0] * v[0] + A[1][1] * v[1] + A[1][2] * v[2],
-    A[2][0] * v[0] + A[2][1] * v[1] + A[2][2] * v[2]
-  ];
-}
-
 /**
  * Integer rotation matrix for `turns` quarter turns about the axis u
  * (u must be one of the six unit axis vectors). Rotation about a negative
