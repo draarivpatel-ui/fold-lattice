@@ -38,7 +38,7 @@ correct column layout, TER records and element columns.
 ## Quick start
 
 ```bash
-node --test test/fold.test.js   # run the 104 unit tests
+npm test                      # run the 205 unit tests
 node demo/commands.js           # run a folding demo in the terminal
 ```
 
@@ -121,14 +121,15 @@ conformation ever seen by any replica is tracked throughout.
 
 ## Tests
 
-104 unit tests cover the RNG, vector math, the MJ matrix (symmetry, anchor
+205 unit tests cover the RNG, vector math, the MJ matrix (symmetry, anchor
 values, strongest pairs), sequence validation, bond angles and dihedrals,
 NeRF placement round trips, rotation matrices, Ramachandran regions, steric
 clashes, radius of gyration, PDB parsing and export (column layout, TER
-records, chain breaks, alternate locations), every move type, simulated
-annealing, REMC exchange statistics, HP model behavior, the lattice to
-backbone pipeline, and a full fold to rebuild to analyze to export to
-reparse end to end run.
+records, chain breaks, alternate locations, multi-model files), every move
+type, occupancy-map integrity, Metropolis edge cases, option validation,
+simulated annealing, REMC exchange statistics, HP model behavior, the
+lattice to backbone pipeline, viewer security and accessibility markup, and
+a full fold to rebuild to analyze to export to reparse end to end run.
 
 ## Browser viewer
 

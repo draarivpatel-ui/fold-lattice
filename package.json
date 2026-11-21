@@ -4,7 +4,7 @@
   "description": "3D lattice protein folding with replica-exchange Monte Carlo, Ramachandran analysis and PDB export",
   "main": "src/fold.js",
   "scripts": {
-    "test": "node --test test/fold.test.js"
+    "test": "node --test test/"
   },
   "keywords": [
     "protein-folding",

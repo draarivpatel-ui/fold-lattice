@@ -135,12 +135,15 @@
   }
 
   function groupResidues(atoms) {
+    // Group on chain + residue number + insertion code to match
+    // computeDihedrals; otherwise 5 and 5A merge and every later residue
+    // gets the wrong Ramachandran assignment.
     var groups = [];
     var cur = null;
     for (var i = 0; i < atoms.length; i++) {
       var a = atoms[i];
-      if (!cur || cur.chainID !== a.chainID || cur.resSeq !== a.resSeq) {
-        cur = { chainID: a.chainID, resSeq: a.resSeq, resName: a.resName, start: i, end: i };
+      if (!cur || cur.chainID !== a.chainID || cur.resSeq !== a.resSeq || cur.iCode !== a.iCode) {
+        cur = { chainID: a.chainID, resSeq: a.resSeq, iCode: a.iCode, resName: a.resName, start: i, end: i };
         groups.push(cur);
       }
       cur.end = i;
@@ -148,11 +151,12 @@
     return groups;
   }
 
-  function resIndexOfGroup(groups, atomIndex) {
+  function atomResidueIndex(groups, atomCount) {
+    var map = new Int32Array(atomCount);
     for (var g = 0; g < groups.length; g++) {
-      if (atomIndex >= groups[g].start && atomIndex <= groups[g].end) { return g; }
+      for (var i = groups[g].start; i <= groups[g].end; i++) { map[i] = g; }
     }
-    return groups.length - 1;
+    return map;
   }
 
   function setFromLattice(coords) {
@@ -177,6 +181,7 @@
 
   function setFromAtoms(atoms) {
     var groups = groupResidues(atoms);
+    var resOfAtom = atomResidueIndex(groups, atoms.length);
     var pts = [];
     var bonds = [];
     for (var i = 0; i < atoms.length; i++) {
@@ -184,7 +189,7 @@
       pts.push({
         p: [a.xyz[0], a.xyz[1], a.xyz[2]],
         r: Math.max(F.atomRadius(a) * 0.45, 0.5),
-        resIndex: resIndexOfGroup(groups, i),
+        resIndex: resOfAtom[i],
         element: (a.element || 'C').toUpperCase()
       });
     }
@@ -203,7 +208,8 @@
     for (var g = 0; g < groups.length; g++) {
       residues.push({
         letter: F.AA3_TO_1[groups[g].resName] || '?',
-        num: groups[g].resSeq,
+        num: groups[g].resSeq === null || groups[g].resSeq === undefined ? '?' : groups[g].resSeq,
+        iCode: groups[g].iCode && groups[g].iCode !== ' ' ? groups[g].iCode : '',
         chain: groups[g].chainID,
         resName: groups[g].resName
       });
@@ -378,6 +384,21 @@
     e.preventDefault();
     cam.zoom = Math.max(0.25, Math.min(6, cam.zoom * Math.exp(-e.deltaY * 0.0012)));
   }, { passive: false });
+  // Keyboard camera control. These keys only act while the canvas itself is
+  // focused, which keeps single character shortcuts inside the WCAG 2.1.4
+  // focus clause.
+  stage.addEventListener('keydown', function (e) {
+    var k = e.key;
+    if (k === 'ArrowLeft') { cam.yaw -= 0.08; }
+    else if (k === 'ArrowRight') { cam.yaw += 0.08; }
+    else if (k === 'ArrowUp') { cam.pitch = Math.max(-1.45, Math.min(1.45, cam.pitch - 0.08)); }
+    else if (k === 'ArrowDown') { cam.pitch = Math.max(-1.45, Math.min(1.45, cam.pitch + 0.08)); }
+    else if (k === '+' || k === '=') { cam.zoom = Math.min(6, cam.zoom * 1.12); }
+    else if (k === '-' || k === '_') { cam.zoom = Math.max(0.25, cam.zoom / 1.12); }
+    else if (k === 'Escape') { selectResidue(null); }
+    else { return; }
+    e.preventDefault();
+  });
 
   function pickBead(e) {
     var rect = stage.getBoundingClientRect();
@@ -398,18 +419,30 @@
     state.selected = idx;
     var chips = ribbon.querySelectorAll('.res');
     for (var i = 0; i < chips.length; i++) {
-      chips[i].classList.toggle('selected', parseInt(chips[i].getAttribute('data-i'), 10) === idx);
+      var sel = parseInt(chips[i].getAttribute('data-i'), 10) === idx;
+      chips[i].classList.toggle('selected', sel);
+      chips[i].setAttribute('aria-pressed', sel ? 'true' : 'false');
     }
     if (idx === null) { residueCard.style.display = 'none'; return; }
     var res = state.residues[idx];
     if (!res) { residueCard.style.display = 'none'; return; }
-    var html = '<b>' + res.resName + ' ' + res.num + '</b> chain ' + res.chain;
+    // All fields below can carry text parsed from an untrusted PDB file, so
+    // the card is built from text nodes, never HTML strings.
+    function line(text) {
+      resBody.appendChild(document.createElement('br'));
+      resBody.appendChild(document.createTextNode(text));
+    }
+    resBody.textContent = '';
+    var head = document.createElement('b');
+    head.textContent = res.resName + ' ' + res.num + (res.iCode || '');
+    resBody.appendChild(head);
+    resBody.appendChild(document.createTextNode(' chain ' + res.chain));
     var d = state.dihedrals ? state.dihedrals[idx] : null;
     if (d && d.phi !== null && d.phi !== undefined) {
-      html += '<br>region: ' + (d.region || 'outlier');
-      html += '<br>phi ' + fmtDeg(d.phi) + ', psi ' + fmtDeg(d.psi);
+      line('region: ' + (d.region || 'outlier'));
+      line('phi ' + fmtDeg(d.phi) + ', psi ' + fmtDeg(d.psi));
       if (d.omega !== null && d.omega !== undefined) {
-        html += '<br>omega ' + fmtDeg(d.omega) + ' (' + (d.omegaClass || '?') + ')';
+        line('omega ' + fmtDeg(d.omega) + ' (' + (d.omegaClass || '?') + ')');
       }
     } else if (state.view === 'lattice') {
       var pt = null;
@@ -417,12 +450,11 @@
         if (state.points[i2].resIndex === idx) { pt = state.points[i2]; break; }
       }
       if (pt) {
-        html += '<br>cell (' + pt.p[0] + ', ' + pt.p[1] + ', ' + pt.p[2] + ')';
-        html += '<br>' + (F.isHydrophobic(res.letter) ? 'hydrophobic' : 'polar') + ' residue';
-        html += '<br>switch the display to all atom for angles';
+        line('cell (' + pt.p[0] + ', ' + pt.p[1] + ', ' + pt.p[2] + ')');
+        line((F.isHydrophobic(res.letter) ? 'hydrophobic' : 'polar') + ' residue');
+        line('switch the display to all atom for angles');
       }
     }
-    resBody.innerHTML = html;
     residueCard.style.display = 'block';
   }
 
@@ -465,7 +497,7 @@
   }
 
   function buildRibbon() {
-    var html = '';
+    ribbon.textContent = '';
     for (var i = 0; i < state.residues.length; i++) {
       var res = state.residues[i];
       var col = '#333a4d';
@@ -476,16 +508,32 @@
       if (pt && pt.rgb) {
         col = 'rgb(' + pt.rgb[0] + ',' + pt.rgb[1] + ',' + pt.rgb[2] + ')';
       }
-      html += '<div class="res' + (state.selected === i ? ' selected' : '') + '" data-i="' + i +
-        '" style="background:' + col + '" title="' + res.resName + ' ' + res.num + '">' +
-        res.letter + '</div>';
+      var chip = document.createElement('div');
+      chip.className = 'res' + (state.selected === i ? ' selected' : '');
+      chip.setAttribute('data-i', String(i));
+      chip.setAttribute('role', 'button');
+      chip.setAttribute('tabindex', '0');
+      chip.setAttribute('aria-pressed', state.selected === i ? 'true' : 'false');
+      chip.setAttribute('aria-label', 'residue ' + res.num + (res.iCode || '') + ', ' + res.resName);
+      chip.style.background = col;
+      chip.title = res.resName + ' ' + res.num + (res.iCode || '');
+      chip.textContent = res.letter;
+      ribbon.appendChild(chip);
     }
-    ribbon.innerHTML = html;
   }
 
   ribbon.addEventListener('click', function (e) {
     var chip = e.target.closest('.res');
     if (!chip) { return; }
+    var idx = parseInt(chip.getAttribute('data-i'), 10);
+    selectResidue(state.selected === idx ? null : idx);
+  });
+
+  ribbon.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') { return; }
+    var chip = e.target.closest('.res');
+    if (!chip) { return; }
+    e.preventDefault();
     var idx = parseInt(chip.getAttribute('data-i'), 10);
     selectResidue(state.selected === idx ? null : idx);
   });
@@ -683,10 +731,13 @@
     '    });',
     '    var r = it.next();',
     '    while (!r.done) {',
-    '      self.postMessage({ type: \'progress\', data: r.value });',
+    '      var v = r.value;',
+    // Generators deliver the result through a final { type: 'done' } yield,
+    // not a return value, so dispatch on the message itself.
+    '      self.postMessage({ type: v && v.done ? \'done\' : \'progress\', data: v });',
     '      r = it.next();',
     '    }',
-    '    self.postMessage({ type: \'done\', data: r.value });',
+    '    if (r.value) { self.postMessage({ type: \'done\', data: r.value }); }',
     '  } catch (err) {',
     '    self.postMessage({ type: \'error\', message: String(err && err.message ? err.message : err) });',
     '  }',
@@ -781,6 +832,13 @@
     updateStats(state.snapshots[0]);
 
     ensureWorker().then(function (w) {
+      // The run may have been stopped or replaced (stop button, PDB import)
+      // while the engine source was still loading; never start a stale job.
+      if (!state.running) {
+        w.terminate();
+        if (worker === w) { worker = null; }
+        return;
+      }
       w.postMessage({ cmd: 'fold', sequence: job.sequence, mode: job.mode,
         replicas: job.replicas, sweeps: job.sweeps,
         stepsPerSweep: job.stepsPerSweep, seed: job.seed, yieldEvery: job.yieldEvery });
@@ -807,18 +865,21 @@
         finishRun();
         return;
       }
-      if (r.done) {
-        onEngineMessage({ data: { type: 'done', data: r.value } });
-      } else {
-        onEngineMessage({ data: { type: 'progress', data: r.value } });
-        setTimeout(step, 0);
+      if (r.value) {
+        var isDone = r.done || r.value.done === true;
+        onEngineMessage({ data: { type: isDone ? 'done' : 'progress', data: r.value } });
       }
+      if (!r.done && !(r.value && r.value.done === true)) { setTimeout(step, 0); }
     }
     setTimeout(step, 0);
   }
 
   function onEngineMessage(msg) {
     if (!msg) { return; }
+    // A worker or chunked pump can deliver a queued message after the run
+    // was stopped or replaced by a PDB import; drop it rather than let a
+    // stale snapshot overwrite the current state.
+    if (!state.running) { return; }
     if (msg.type === 'progress') {
       var d = msg.data;
       state.snapshots.push({
@@ -851,6 +912,9 @@
   }
 
   function onWorkerMessage(e) {
+    // Events already dispatched by a terminated worker must not reach the
+    // (possibly new) run.
+    if (!worker || e.target !== worker) { return; }
     onEngineMessage(e.data);
   }
 
@@ -904,9 +968,15 @@
         var rec;
         if (state.rebuilt && snap === finalSnapshot()) { rec = state.rebuilt; }
         else { rec = F.reconstructLatticeBackbone(folderFromCoords(snap.coords)); }
-        if (snap === finalSnapshot()) { state.dihedrals = rec.dihedrals; }
+        // The rebuilt dihedrals describe the displayed snapshot, so keep
+        // them in sync when scrubbing instead of leaving the final
+        // structure's Ramachandran assignment on earlier sweeps.
+        state.dihedrals = rec.dihedrals;
         setFromAtoms(rec.atoms);
       } else {
+        // Lattice beads carry no backbone geometry; only the final snapshot
+        // has cached dihedrals to color by, so earlier sweeps show neutral.
+        if (snap !== finalSnapshot()) { state.dihedrals = null; }
         setFromLattice(snap.coords);
       }
       applyColors();
@@ -926,6 +996,7 @@
   scrubR.max = '0';
   scrubR.value = '0';
   scrubR.style.cssText = 'width:100%;accent-color:#4ecdc4;display:none;';
+  scrubR.setAttribute('aria-label', 'trace scrubber');
   var scrubLabel = document.createElement('div');
   scrubLabel.style.cssText = 'font-size:11px;color:#8fa0bd;margin-bottom:6px;display:none;';
   scrubLabel.textContent = 'trace scrubber: replay the best conformation over sweeps';
@@ -940,6 +1011,7 @@
     updateStats(state.snapshots[state.scrub]);
     refreshDisplay();
     drawTrace();
+    drawRama();
   });
 
   function updateScrubber() {
@@ -990,11 +1062,20 @@
   // ---------------------------------------------------------------------
   // pdb import
   // ---------------------------------------------------------------------
+  var pdbLoadGen = 0;
   pdbFile.addEventListener('change', function () {
     pdbMsg.textContent = '';
     var file = pdbFile.files && pdbFile.files[0];
     if (!file) { return; }
+    var gen = ++pdbLoadGen;
+    // Stop any in flight fold: a late worker message would otherwise redraw
+    // over the imported structure.
+    if (worker) { worker.terminate(); worker = null; }
+    state.running = false;
     file.text().then(function (text) {
+      // Two rapid file selections resolve out of order; only the newest
+      // selection is allowed to replace the view state.
+      if (gen !== pdbLoadGen) { return; }
       var parsed = F.parsePdb(text);
       var dihedrals = F.computeDihedrals(parsed.atoms);
       state.source = 'pdb';
@@ -1017,7 +1098,7 @@
       });
       pdbMsg.textContent = 'parsed ' + parsed.atoms.length + ' atoms, ' +
         state.residues.length + ' residues, ' + clashes.length +
-        ' non bonded steric clashes, ' + parsed.numModelsRead + ' model(s) read';
+        ' non bonded steric clashes, ' + parsed.modelCount + ' model(s) in file, first model read';
       pdbBtn.disabled = false;
       foldBtn.disabled = false;
       stopBtn.disabled = true;
@@ -1028,6 +1109,7 @@
       drawRama();
       showAll.value = 'yes';
     }).catch(function (err) {
+      if (gen !== pdbLoadGen) { return; }
       pdbMsg.textContent = 'parse failed: ' + (err.message || err);
     });
   });

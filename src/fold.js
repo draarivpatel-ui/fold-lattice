@@ -354,7 +354,11 @@ function parsePdbLine(line) {
   if (record !== 'ATOM' && record !== 'HETATM') { return null; }
   function num(start, end) {
     var s = line.slice(start, end).trim();
-    return s === '' ? null : parseFloat(s);
+    if (s === '') { return null; }
+    var v = parseFloat(s);
+    // Non-finite text (NaN, Infinity) is not a usable number; treat it as
+    // absent so the record is skipped instead of poisoning the geometry.
+    return Number.isFinite(v) ? v : null;
   }
   var serial = num(6, 11);
   var name = line.slice(12, 16);
@@ -387,9 +391,11 @@ function parsePdbLine(line) {
 }
 
 /**
- * Parse the ATOM records of a PDB file. By default only the first MODEL is
- * read and alternate location indicators other than blank and A are skipped.
- * HETATM records are included only with includeHetatm: true.
+ * Parse the ATOM records of a PDB file. Only the first MODEL is read and
+ * alternate location indicators other than blank and A are skipped.
+ * HETATM records are included only with includeHetatm: true. Returns
+ * { atoms, remarks, numModelsRead: 1, modelCount } where modelCount is the
+ * number of MODEL records in the file (1 for an implicit single model).
  */
 function parsePdb(text, options) {
   var opts = options || {};
@@ -398,15 +404,24 @@ function parsePdb(text, options) {
   var modelIndex = 0;
   var firstModel = -1;
   var remarks = [];
+  var modelCount = 0;
+  var reading = true;
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
-    if (line.slice(0, 6) === 'ENDMDL') { break; }
-    if (line.slice(0, 6) === 'MODEL ') {
-      modelIndex++;
-      if (firstModel < 0) { firstModel = modelIndex; }
-      if (modelIndex > firstModel) { break; }
+    if (line.slice(0, 6) === 'ENDMDL') {
+      if (modelIndex > firstModel) { reading = false; }
       continue;
     }
+    // MODEL records are counted to the end of file even though atoms are
+    // collected only from the first model.
+    if (line.slice(0, 6) === 'MODEL ') {
+      modelCount++;
+      modelIndex++;
+      if (firstModel < 0) { firstModel = modelIndex; }
+      if (modelIndex > firstModel) { reading = false; }
+      continue;
+    }
+    if (!reading) { continue; }
     if (line.slice(0, 6) === 'REMARK') { remarks.push(line.slice(6).trim()); continue; }
     var parsed = parsePdbLine(line);
     if (!parsed) { continue; }
@@ -418,22 +433,66 @@ function parsePdb(text, options) {
   if (atoms.length === 0) {
     throw new Error('no ATOM records found in PDB input');
   }
-  return { atoms: atoms, remarks: remarks, numModelsRead: modelIndex };
+  return {
+    atoms: atoms,
+    remarks: remarks,
+    numModelsRead: 1,
+    modelCount: Math.max(modelCount, 1)
+  };
 }
 
 function padLeft(s, n) { s = String(s); while (s.length < n) { s = ' ' + s; } return s; }
 function padRight(s, n) { s = String(s); while (s.length < n) { s = s + ' '; } return s; }
+
+// PDB is a fixed-width format: an overlong field shifts every column
+// after it and silently corrupts the record, so overflow and control
+// characters are rejected instead of emitted.
+function pdbText(value, maxLen, name) {
+  var s = String(value === undefined || value === null ? '' : value);
+  if (/[\x00-\x1f\x7f]/.test(s)) {
+    throw new RangeError(name + ' must not contain control characters');
+  }
+  if (s.length > maxLen) {
+    throw new RangeError(name + ' is longer than its ' + maxLen + '-column PDB field');
+  }
+  return s;
+}
+
+function pdbIntField(value, min, max, name) {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new RangeError(name + ' must be an integer in [' + min + ', ' + max + ']');
+  }
+  return String(value);
+}
+
 function fmtCoord(v) {
+  if (!Number.isFinite(v)) { throw new RangeError('atom coordinate must be finite'); }
   var s = v.toFixed(3);
   if (s.length > 8) { s = v.toFixed(2); }
+  if (s.length > 8) {
+    throw new RangeError('atom coordinate ' + v + ' does not fit the 8-column PDB field');
+  }
   return padLeft(s, 8);
 }
 
-function pdbAtomNameField(name) {
-  // Standard PDB column rules: single and two character atom names start in
-  // column 14 (index 13) so the element symbol lines up on the right.
+function fmt6(v, name) {
+  if (!Number.isFinite(v)) { throw new RangeError(name + ' must be finite'); }
+  var s = v.toFixed(2);
+  if (s.length > 6) {
+    throw new RangeError(name + ' ' + v + ' does not fit the 6-column PDB field');
+  }
+  return padLeft(s, 6);
+}
+
+function pdbAtomNameField(name, element) {
+  // Standard PDB column rules: the element symbol is right justified in
+  // columns 13-14, so one and two character atom names for single letter
+  // elements start in column 14. Atom names that lead with a digit or a
+  // two letter element symbol start in column 13 instead.
   var n = String(name).trim();
   if (n.length >= 4) { return n.slice(0, 4); }
+  var el = String(element || '').trim().toUpperCase();
+  if (el.length === 2 || /^[0-9]/.test(n)) { return padRight(n, 4); }
   if (n.length === 3) { return ' ' + n; }
   if (n.length === 2) { return ' ' + n + ' '; }
   return ' ' + n + '  ';
@@ -447,38 +506,57 @@ function atomsToPdb(atoms, options) {
   var opts = options || {};
   var out = [];
   if (opts.title) {
-    out.push('HEADER    ' + String(opts.title).slice(0, 50));
+    out.push('HEADER    ' + pdbText(opts.title, 50, 'title'));
   }
   out.push('REMARK   2 fold-lattice ' + VERSION + ' pdb export');
   if (opts.remarks) {
     for (var r = 0; r < opts.remarks.length; r++) {
-      out.push('REMARK   3 ' + String(opts.remarks[r]).slice(0, 66));
+      out.push('REMARK   3 ' + pdbText(opts.remarks[r], 66, 'remark'));
     }
   }
-  var serial = opts.startSerial || 1;
+  var serial = opts.startSerial === undefined ? 1 : opts.startSerial;
+  if (!Number.isInteger(serial) || serial < 1 || serial > 99999) {
+    throw new RangeError('startSerial must be an integer in [1, 99999]');
+  }
   var prevChain = null;
   var prevResName = null;
+  var prevResSeq = null;
+  var prevICode = null;
+  function terLine() {
+    return 'TER   ' + padLeft(pdbIntField(serial, 1, 99999, 'atom serial'), 5) + '      ' +
+      padRight(pdbText(prevResName || '', 3, 'resName'), 3) +
+      ' ' + pdbText(prevChain || ' ', 1, 'chainID') +
+      padLeft(prevResSeq === null ? '' : pdbIntField(prevResSeq, -999, 9999, 'resSeq'), 4) +
+      pdbText(prevICode || ' ', 1, 'iCode');
+  }
   for (var i = 0; i < atoms.length; i++) {
     var a = atoms[i];
     if (prevChain !== null && a.chainID !== prevChain) {
-      out.push('TER   ' + padLeft(serial, 5) + '      ' + padRight(prevResName || '', 3) + ' ' + (prevChain || ' '));
+      out.push(terLine());
       serial++;
     }
     prevChain = a.chainID || ' ';
     prevResName = a.resName || '';
-    var element = (a.element || inferElement(a.name)).toUpperCase();
+    prevResSeq = a.resSeq === undefined ? null : a.resSeq;
+    prevICode = a.iCode && a.iCode !== ' ' ? a.iCode : null;
+    var element = pdbText((a.element || inferElement(a.name)).toUpperCase(), 2, 'element');
+    var resSeqField = a.resSeq === undefined || a.resSeq === null ? '' :
+      pdbIntField(a.resSeq, -999, 9999, 'resSeq');
     var line =
-      'ATOM  ' + padLeft(serial, 5) + ' ' + pdbAtomNameField(a.name) +
-      (a.altLoc || ' ') + padRight(a.resName || 'UNK', 3) + ' ' + (a.chainID || ' ') +
-      padLeft(a.resSeq, 4) + (a.iCode || ' ') + '   ' +
+      'ATOM  ' + padLeft(pdbIntField(serial, 1, 99999, 'atom serial'), 5) + ' ' +
+      pdbAtomNameField(pdbText(a.name, 4, 'atom name'), element) +
+      pdbText(a.altLoc || ' ', 1, 'altLoc') +
+      padRight(pdbText(a.resName || 'UNK', 3, 'resName'), 3) + ' ' +
+      pdbText(a.chainID || ' ', 1, 'chainID') +
+      padLeft(resSeqField, 4) + pdbText(a.iCode || ' ', 1, 'iCode') + '   ' +
       fmtCoord(a.xyz[0]) + fmtCoord(a.xyz[1]) + fmtCoord(a.xyz[2]) +
-      padLeft(typeof a.occupancy === 'number' ? a.occupancy.toFixed(2) : '1.00', 6) +
-      padLeft(typeof a.tempFactor === 'number' ? a.tempFactor.toFixed(2) : '0.00', 6) +
+      (typeof a.occupancy === 'number' ? fmt6(a.occupancy, 'occupancy') : '  1.00') +
+      (typeof a.tempFactor === 'number' ? fmt6(a.tempFactor, 'tempFactor') : '  0.00') +
       '          ' + padLeft(element, 2);
     out.push(line);
     serial++;
   }
-  out.push('TER   ' + padLeft(serial, 5) + '      ' + padRight(prevResName || '', 3) + ' ' + (prevChain || ' '));
+  if (atoms.length) { out.push(terLine()); }
   out.push('END');
   return out.join('\n') + '\n';
 }
@@ -513,8 +591,11 @@ function reconstructBackbone(sequence, angles) {
   }
   for (var v = 0; v < n; v++) {
     var entry = angles[v];
-    if (!entry || typeof entry.phi !== 'number' || typeof entry.psi !== 'number') {
+    if (!entry || !Number.isFinite(entry.phi) || !Number.isFinite(entry.psi)) {
       throw new Error('angles[' + v + '] must provide numeric phi and psi');
+    }
+    if (entry.omega !== undefined && !Number.isFinite(entry.omega)) {
+      throw new Error('angles[' + v + '] must provide a finite omega when given');
     }
   }
   var g = BACKBONE_GEOM;
@@ -707,8 +788,11 @@ function validateSequence(sequence) {
 // ---------------------------------------------------------------------------
 // 3D cubic lattice folder
 // ---------------------------------------------------------------------------
-var KEY_OFFSET = 2048;
-var KEY_K = 4096;
+// Occupancy keys stay collision free for |coordinate| <= 100000, far beyond
+// any chain this toolkit folds. The largest key is about 8e15 < 2^53, so
+// every key remains an exact integer.
+var KEY_OFFSET = 100000;
+var KEY_K = 200001;
 
 function cellKey(x, y, z) {
   return (x + KEY_OFFSET) + KEY_K * (y + KEY_OFFSET) + KEY_K * KEY_K * (z + KEY_OFFSET);
@@ -760,13 +844,20 @@ class LatticeFolder {
 
   indexAt(x, y, z) { return this.occ.get(cellKey(x, y, z)); }
 
-  /** Full validation: self avoidance plus chain connectivity. */
+  /** Full validation: integer lattice cells, self avoidance, connectivity. */
   isValidConformation(coords) {
     var c = coords || this.coords;
     var n = this.n;
     if (c.length !== n) { return false; }
     var seen = new Set();
     for (var i = 0; i < n; i++) {
+      // Lattice points are integers inside the cellKey injective range; a
+      // shifted half-integer walk is not a lattice conformation.
+      if (!Number.isInteger(c[i][0]) || !Number.isInteger(c[i][1]) || !Number.isInteger(c[i][2])) {
+        return false;
+      }
+      if (Math.abs(c[i][0]) >= KEY_OFFSET || Math.abs(c[i][1]) >= KEY_OFFSET ||
+          Math.abs(c[i][2]) >= KEY_OFFSET) { return false; }
       var k = cellKey(c[i][0], c[i][1], c[i][2]);
       if (seen.has(k)) { return false; }
       seen.add(k);
@@ -828,6 +919,12 @@ class LatticeFolder {
   }
 
   swapStateWith(other) {
+    // Swapping coordinates without the same sequence and energy model
+    // leaves cached energies scored under the wrong pairing function.
+    if (!(other instanceof LatticeFolder) || other.n !== this.n ||
+        other.sequence !== this.sequence || other.mode !== this.mode) {
+      throw new Error('swapStateWith requires the same sequence and energy model');
+    }
     var t;
     t = this.coords; this.coords = other.coords; other.coords = t;
     t = this.occ; this.occ = other.occ; other.occ = t;
@@ -850,7 +947,13 @@ class LatticeFolder {
   _evaluate(cand) {
     var occ = new Map();
     for (var i = 0; i < this.n; i++) {
-      var k = cellKey(cand[i][0], cand[i][1], cand[i][2]);
+      var ci = cand[i];
+      if (!Number.isInteger(ci[0]) || !Number.isInteger(ci[1]) || !Number.isInteger(ci[2])) {
+        return null;
+      }
+      if (Math.abs(ci[0]) >= KEY_OFFSET || Math.abs(ci[1]) >= KEY_OFFSET ||
+          Math.abs(ci[2]) >= KEY_OFFSET) { return null; }
+      var k = cellKey(ci[0], ci[1], ci[2]);
       if (occ.has(k)) { return null; }
       occ.set(k, i);
     }
@@ -874,6 +977,9 @@ class LatticeFolder {
         }
       }
     }
+    // Canonical order so the contacts array does not depend on how the
+    // conformation was reached.
+    contacts.sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
     return { occ: occ, energy: e, contacts: contacts };
   }
 
@@ -1120,6 +1226,9 @@ class LatticeFolder {
    * conformation unchanged.
    */
   mcStep(temperature, rng) {
+    if (!Number.isFinite(temperature) || temperature < 0) {
+      throw new RangeError('temperature must be a nonnegative finite number');
+    }
     var r = rng();
     var type;
     if (r < 0.40) { type = 'pull'; }
@@ -1131,7 +1240,7 @@ class LatticeFolder {
     if (!res.moved) {
       return { moved: false, accepted: false, dE: 0, type: type, proposed: true };
     }
-    var accept = res.dE <= 0 || temperature <= 0 || rng() < Math.exp(-res.dE / temperature);
+    var accept = res.dE <= 0 || (temperature > 0 && rng() < Math.exp(-res.dE / temperature));
     if (accept) { this._commit(res.cand, res.occ, res.energy, res.contacts); }
     return { moved: true, accepted: accept, dE: res.dE, type: type, proposed: true };
   }
@@ -1202,14 +1311,44 @@ function rotationAboutAxis(u, turns) {
 // ---------------------------------------------------------------------------
 
 function geometricTemps(count, minTemp, maxTemp) {
-  if (count < 1) { throw new Error('need at least one replica'); }
-  if (count === 1) { return [minTemp]; }
-  var out = [];
-  var ratio = Math.pow(minTemp / maxTemp, 1 / (count - 1));
-  for (var i = 0; i < count; i++) {
-    out.push(maxTemp * Math.pow(ratio, i));
+  if (!Number.isInteger(count) || count < 1) { throw new Error('need at least one replica'); }
+  if (!Number.isFinite(minTemp) || minTemp <= 0) {
+    throw new Error('minTemp must be a positive finite number');
   }
+  if (!Number.isFinite(maxTemp) || maxTemp <= 0) {
+    throw new Error('maxTemp must be a positive finite number');
+  }
+  if (maxTemp < minTemp) { throw new Error('maxTemp must be greater than or equal to minTemp'); }
+  if (count === 1) { return [minTemp]; }
+  // Interpolate in log space: pow(minTemp/maxTemp, ...) and even
+  // log(minTemp/maxTemp) lose the ratio for very wide ranges (1e-400
+  // underflows to 0), which would silently freeze every interior replica.
+  var logMin = Math.log(minTemp), logMax = Math.log(maxTemp);
+  var step = (logMin - logMax) / (count - 1);
+  var out = [];
+  for (var i = 0; i < count; i++) {
+    out.push(Math.exp(logMax + step * i));
+  }
+  out[0] = maxTemp;
+  out[count - 1] = minTemp;
   return out;
+}
+
+function positiveIntOption(value, fallback, name) {
+  var v = value === undefined ? fallback : value;
+  if (!Number.isInteger(v) || v < 1) {
+    throw new Error(name + ' must be a positive integer');
+  }
+  return v;
+}
+
+function temperatureOption(value, fallback, name, allowZero) {
+  var v = value === undefined ? fallback : value;
+  var ok = Number.isFinite(v) && (allowZero ? v >= 0 : v > 0);
+  if (!ok) {
+    throw new Error(name + ' must be a ' + (allowZero ? 'nonnegative' : 'positive') + ' finite number');
+  }
+  return v;
 }
 
 /**
@@ -1222,12 +1361,13 @@ function* remcGenerator(options) {
   var seq = validateSequence(opts.sequence);
   var n = seq.length;
   var mode = opts.mode === 'hp' ? 'hp' : 'mj';
-  var replicas = opts.replicas || 8;
-  var sweeps = opts.sweeps || 1500;
-  var stepsPerSweep = opts.stepsPerSweep || n;
-  var minTemp = typeof opts.minTemp === 'number' ? opts.minTemp : 0.2;
-  var maxTemp = typeof opts.maxTemp === 'number' ? opts.maxTemp : 2.5;
-  var yieldEvery = opts.yieldEvery || 25;
+  var replicas = positiveIntOption(opts.replicas, 8, 'replicas');
+  var sweeps = positiveIntOption(opts.sweeps, 1500, 'sweeps');
+  var stepsPerSweep = positiveIntOption(opts.stepsPerSweep, n, 'stepsPerSweep');
+  var minTemp = temperatureOption(opts.minTemp, 0.2, 'minTemp');
+  var maxTemp = temperatureOption(opts.maxTemp, 2.5, 'maxTemp');
+  if (maxTemp < minTemp) { throw new Error('maxTemp must be greater than or equal to minTemp'); }
+  var yieldEvery = positiveIntOption(opts.yieldEvery, 25, 'yieldEvery');
   var seed = opts.seed === undefined ? 12345 : opts.seed;
   var rng = makeRng(seed);
   var temps = geometricTemps(replicas, minTemp, maxTemp);
@@ -1240,13 +1380,13 @@ function* remcGenerator(options) {
   var trace = [];
   var started = Date.now();
 
-  function considerBest(f) {
+  function considerBest(f, replicaIndex) {
     var e = f.energy();
     if (!best || e < best.energy) {
-      best = { energy: e, coords: f.coords.map(function (c) { return c.slice(); }), replica: 0 };
+      best = { energy: e, coords: f.coords.map(function (c) { return c.slice(); }), replica: replicaIndex };
     }
   }
-  for (var r0 = 0; r0 < replicas; r0++) { considerBest(folders[r0]); }
+  for (var r0 = 0; r0 < replicas; r0++) { considerBest(folders[r0], r0); }
 
   for (var s = 0; s < sweeps; s++) {
     for (var r1 = 0; r1 < replicas; r1++) {
@@ -1256,7 +1396,7 @@ function* remcGenerator(options) {
         proposed++;
         if (res.accepted) { accepted++; }
       }
-      considerBest(f);
+      considerBest(f, r1);
     }
     // Replica exchanges between adjacent temperature slots, alternating
     // even and odd pairs each sweep.
@@ -1353,12 +1493,12 @@ function* annealingGenerator(options) {
   var seq = validateSequence(opts.sequence);
   var n = seq.length;
   var mode = opts.mode === 'hp' ? 'hp' : 'mj';
-  var sweeps = opts.sweeps || 800;
-  var stepsPerSweep = opts.stepsPerSweep || n;
-  var T0 = typeof opts.T0 === 'number' ? opts.T0 : 2.0;
-  var T1 = typeof opts.T1 === 'number' ? opts.T1 : 0.05;
+  var sweeps = positiveIntOption(opts.sweeps, 800, 'sweeps');
+  var stepsPerSweep = positiveIntOption(opts.stepsPerSweep, n, 'stepsPerSweep');
+  var T0 = temperatureOption(opts.T0, 2.0, 'T0');
+  var T1 = temperatureOption(opts.T1, 0.05, 'T1', true);
   var cooling = opts.cooling === 'linear' ? 'linear' : 'geometric';
-  var yieldEvery = opts.yieldEvery || 20;
+  var yieldEvery = positiveIntOption(opts.yieldEvery, 20, 'yieldEvery');
   var seed = opts.seed === undefined ? 12345 : opts.seed;
   var rng = makeRng(seed);
   var folder = new LatticeFolder(seq, { mode: mode });
@@ -1368,7 +1508,10 @@ function* annealingGenerator(options) {
   var started = Date.now();
   for (var s = 0; s < sweeps; s++) {
     var frac = sweeps === 1 ? 1 : s / (sweeps - 1);
-    var T = cooling === 'linear' ? T0 + (T1 - T0) * frac : T0 * Math.pow(T1 / T0, frac);
+    // A geometric schedule cannot reach T1 = 0 (pow(0, frac) is 0 for every
+    // frac > 0, giving one hot sweep then a pure quench), so fall back to a
+    // linear ramp when the target is exactly zero.
+    var T = (cooling === 'linear' || T1 === 0) ? T0 + (T1 - T0) * frac : T0 * Math.pow(T1 / T0, frac);
     for (var st = 0; st < stepsPerSweep; st++) {
       var res = folder.mcStep(T, rng);
       proposed++;
@@ -1445,7 +1588,8 @@ function reconstructLatticeBackbone(folder) {
       return {
         resIndex: idx,
         phi: a.phi, psi: a.psi, omega: a.omega,
-        region: a.region
+        region: a.region,
+        omegaClass: classifyOmega(a.omega)
       };
     })
   };
