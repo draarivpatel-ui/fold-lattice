@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' file: data:; connect-src 'self' file:; worker-src blob:; base-uri 'none'; form-action 'none'">
-<title>fold-lattice, 3D lattice protein folding</title>
-<meta name="description" content="Interactive 3D lattice protein folding with replica-exchange Monte Carlo, Ramachandran analysis and PDB export. Zero dependencies.">
+<title>fold-lattice, lattice protein folding workbench</title>
+<meta name="description" content="Interactive 2D and 3D lattice protein folding workbench: replica-exchange Monte Carlo, algorithm comparator, folding funnel landscapes, mutation stress scans and checksummed audits. Zero dependencies.">
 <style>
   :root {
     color-scheme: dark;
@@ -122,12 +122,40 @@
   footer { color: var(--muted); font-size: 11px; padding: 6px 20px 18px; max-width: 1400px; margin: 0 auto; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
+
+  /* lab workbench */
+  .workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; padding: 0 20px 20px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) { .workbench { grid-template-columns: minmax(0, 1fr); } }
+  .workbench > * { min-width: 0; }
+  #labTableWrap { max-width: 100%; overflow-x: auto; }
+  .span2 { grid-column: 1 / -1; }
+  .labtable { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .labtable th { color: var(--muted); font-weight: 400; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  .labtable th:first-child, .labtable td:first-child { text-align: left; }
+  .labtable td { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--line); }
+  .labtable tr[data-i] { cursor: pointer; }
+  .labtable tr[data-i]:hover td { background: rgba(78, 205, 196, 0.07); }
+  .labtable tr.sel td { background: rgba(78, 205, 196, 0.12); }
+  button.mini { padding: 3px 9px; font-size: 11px; border-radius: 6px; }
+  svg.lab { width: 100%; height: auto; display: block; background: var(--panel2); border-radius: 8px; }
+  .labInfo { color: var(--muted); font-size: 11px; margin-top: 6px; min-height: 15px; }
+  .labNote { color: var(--muted); font-size: 11px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .verdict { font-size: 12px; min-height: 16px; margin-top: 6px; }
+  .verdict.pass, #selfTestList li.pass { color: var(--accent); }
+  .verdict.fail, #selfTestList li.fail { color: var(--accent2); }
+  #selfTestList { list-style: none; margin: 8px 0 0; padding: 0; font-size: 11px; max-height: 220px; overflow-y: auto; }
+  #selfTestList li { padding: 2px 0; border-bottom: 1px solid rgba(38, 48, 74, 0.5); }
+  #auditPreview { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 10px; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin-top: 8px; }
+  #auditSum { font-size: 11px; color: var(--accent); word-break: break-all; margin-top: 6px; }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .num { width: 100%; }
+  .controls input[type="number"] { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; width: 100%; }
+  rect.sel { stroke: #ffffff; stroke-width: 1.5; }
 </style>
 </head>
 <body>
 <header>
   <h1>fold-lattice</h1>
-  <span class="tag">3D lattice protein folding, replica-exchange Monte Carlo, Ramachandran analysis, PDB export</span>
   <span class="ver" id="verTag"></span>
 </header>
 
@@ -208,13 +236,117 @@
   <section class="card"><h2>Ramachandran map (rebuilt backbone)</h2><canvas id="ramaChart" class="chart" role="img" aria-label="scatter plot of phi and psi backbone angles colored by region">Scatter plot of phi and psi backbone angles colored by Ramachandran region.</canvas></section>
 </div>
 
+<div class="workbench">
+  <section class="card controls span2" id="labCard">
+    <h2>HP folding comparator</h2>
+    <div class="row"><label for="hpSeqInput">HP sequence</label>
+      <input type="text" id="hpSeqInput" value="HPPHPHPHPHH" spellcheck="false" aria-label="HP sequence, H hydrophobic and P polar">
+    </div>
+    <div class="row"><label for="hpPresetSel">presets</label>
+      <select id="hpPresetSel">
+        <option value="">choose a benchmark</option>
+        <option value="HPPHPH:2">2D 6mer HPPHPH</option>
+        <option value="HPPHPHPH:2">2D 8mer HPPHPHPH</option>
+        <option value="HPPHPHPHPHH:2">2D 11mer HPPHPHPHPHH</option>
+        <option value="HHPPHPHPHPPH:2">2D 12mer HHPPHPHPHPPH</option>
+        <option value="HPHPPHHPHPPHPHHPPHPH:2">2D 20mer classic</option>
+        <option value="HPPHPHPH:3">3D 8mer HPPHPHPH</option>
+        <option value="HHPHPHPHPP:3">3D 10mer HHPHPHPHPP</option>
+      </select>
+    </div>
+    <div class="row"><label for="dimSel">lattice</label>
+      <select id="dimSel">
+        <option value="2">2D square</option>
+        <option value="3">3D cubic</option>
+      </select>
+    </div>
+    <div class="row"><label for="seedInput">seed</label>
+      <input type="number" id="seedInput" min="0" max="4294967295" step="1" value="42">
+    </div>
+    <div class="row"><label for="samplesInput">rw samples</label>
+      <input type="number" id="samplesInput" min="10" max="5000" step="10" value="250">
+    </div>
+    <div class="row"><label for="mcStepsInput">mc steps</label>
+      <input type="number" id="mcStepsInput" min="100" max="200000" step="100" value="3000">
+    </div>
+    <div class="row"><label for="tempInput">mc temp</label>
+      <input type="number" id="tempInput" min="0" max="10" step="0.1" value="0.8">
+    </div>
+    <div class="row"><label for="saSweepsInput">sa sweeps</label>
+      <input type="number" id="saSweepsInput" min="5" max="2000" step="5" value="80">
+    </div>
+    <div class="row"><label for="t0Input">sa T0</label>
+      <input type="number" id="t0Input" min="0.05" max="50" step="0.05" value="1.5">
+    </div>
+    <div class="row"><label for="t1Input">sa T1</label>
+      <input type="number" id="t1Input" min="0" max="10" step="0.05" value="0.05">
+    </div>
+    <div class="btnrow">
+      <button id="compareBtn" class="primary">Compare algorithms</button>
+    </div>
+    <div class="err" id="labErr" role="alert"></div>
+    <div class="labInfo" id="labStatus" role="status" aria-live="polite">five deterministic seeded algorithms on one sequence: random SAW sampling, greedy local pivot, Metropolis MC at fixed T, simulated annealing, and exact exhaustive enumeration of the ground state (exact runs up to length 16 in 2D, length 10 in 3D)</div>
+    <div id="labTableWrap"></div>
+    <div class="labNote">Dill HP lattice model: a simplified statistical physics toy where H beads attract at -1 per non bonded lattice contact. It demonstrates folding thermodynamics and search algorithms; it is not an atomistic force field and not an AlphaFold style structure predictor.</div>
+  </section>
+
+  <section class="card" id="funnelCard">
+    <h2>Folding funnel landscape</h2>
+    <div class="row"><label for="funnelAxisSel" style="color:var(--muted);font-size:12px;min-width:86px">x axis</label>
+      <select id="funnelAxisSel" style="background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;width:100%">
+        <option value="rg">compactness (R_g)</option>
+        <option value="step">iteration</option>
+      </select>
+    </div>
+    <svg id="funnelSvg" class="lab" role="img" aria-label="scatter chart of conformation energy against compactness for each folding algorithm"></svg>
+    <div class="labInfo" id="funnelInfo">run the comparator to draw the funnel</div>
+  </section>
+
+  <section class="card" id="cmapCard">
+    <h2>Residue contact map</h2>
+    <svg id="cmapSvg" class="lab" role="img" aria-label="residue by residue contact matrix highlighting non bonded H-H contacts"></svg>
+    <div class="labInfo" id="cmapInfo">run the comparator, then click a cell for pair details</div>
+  </section>
+
+  <section class="card controls" id="mutCard">
+    <h2>Mutation stress scan</h2>
+    <div class="btnrow"><button id="mutBtn">Scan H to P and P to H</button></div>
+    <svg id="mutSvg" class="lab" role="img" aria-label="bar chart of per residue point mutation energy deltas"></svg>
+    <div class="labInfo" id="mutInfo">select a conformation, then scan single point mutations</div>
+  </section>
+
+  <section class="card controls" id="auditCard">
+    <h2>Audit export and self tests</h2>
+    <div class="btnrow">
+      <button id="auditJsonBtn">JSON audit</button>
+      <button id="auditCsvBtn">CSV audit</button>
+      <button id="auditMdBtn">Markdown audit</button>
+      <button id="bookmarkBtn">Bookmark URL</button>
+    </div>
+    <div class="btnrow">
+      <button id="verifyBtn">Verify checksum</button>
+      <button id="tamperBtn">Tamper check</button>
+      <button id="selfTestBtn">Run self-tests</button>
+    </div>
+    <div id="auditSum" aria-label="report sha256 checksum"></div>
+    <div class="verdict" id="auditVerdict" role="status" aria-live="polite"></div>
+    <pre id="auditPreview" aria-label="audit report preview"></pre>
+    <div class="labInfo" id="selfTestInfo" role="status" aria-live="polite">self tests load with the page</div>
+    <ul id="selfTestList"></ul>
+    <div class="labNote">Audit reports carry an unkeyed SHA-256 (FIPS 180-4) tamper detection digest over the canonicalized payload. It detects edits to the file; it is not a signature and proves no authorship. CSV cells are formula injection escaped.</div>
+  </section>
+</div>
+
 <footer>
   Engine and tests: <a href="https://github.com/draarivpatel-ui/fold-lattice">github.com/draarivpatel-ui/fold-lattice</a>
   · Contact energies from Miyazawa and Jernigan (1996), J. Mol. Biol. 256, 623 to 644 ·
-  Pull moves after Lesh, Mitzenmacher and Whitesides (2003).
+  Pull moves after Lesh, Mitzenmacher and Whitesides (2003) ·
+  HP workbench after Dill (1985), exact enumeration over symmetry reduced self avoiding walks.
 </footer>
 
 <script src="src/fold.js"></script>
 <script src="app.js"></script>
+<script src="src/lab.js"></script>
+<script src="lab-app.js"></script>
 </body>
 </html>

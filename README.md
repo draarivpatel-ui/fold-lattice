@@ -4,6 +4,12 @@ A zero dependency toolkit for coarse grained protein folding, replica-exchange
 Monte Carlo, Ramachandran analysis and PDB export. Pure JavaScript, runs in
 Node.js and in the browser with no packages to install.
 
+Version 2 adds the HP workbench: a Dill-model algorithm comparator on 2D
+square and 3D cubic lattices, exact ground state enumeration for short
+chains, a folding funnel landscape, mutation stress scans, an LxL residue
+contact map, SHA-256 checksummed audit exports, URL hash bookmarks and an
+in page self test runner.
+
 ## What it does
 
 **Lattice folding engine.** Protein chains live on the 3D cubic lattice as
@@ -35,11 +41,32 @@ filters.
 alternate locations A or blank), and export atoms to standard PDB text with
 correct column layout, TER records and element columns.
 
+**HP workbench (`src/lab.js` + `lab-app.js`).** Five seeded algorithms run
+side by side on the same HP sequence: random SAW sampling, greedy local
+pivot, fixed temperature Metropolis Monte Carlo, simulated annealing with a
+geometric schedule, and exact exhaustive enumeration over symmetry reduced
+self avoiding walks (up to length 16 in 2D and 10 in 3D). Every algorithm
+reports best energy, contact count, H-H contacts, radius of gyration,
+end to end distance, wall time and the optimality gap against the exact
+ground state. The workbench also draws the energy vs compactness funnel
+cloud, an interactive LxL residue contact matrix, a per residue mutation
+stability scan (H to P and P to H delta-E), and exports a canonicalized
+JSON / CSV / Markdown audit report stamped with a pure JavaScript FIPS
+180-4 SHA-256 digest (unkeyed tamper detection, not a signature). Runs
+bookmark into the URL hash as `#fold=SEQ:DIMd:SEED` and any compared
+conformation can be shown on the original 3D stage.
+
+> The Dill HP lattice model is a simplified statistical physics toy. It is
+> not an atomistic force field and not an AlphaFold style structure
+> predictor; it demonstrates folding thermodynamics and search dynamics on
+> a lattice.
+
 ## Quick start
 
 ```bash
-npm test                      # run the 205 unit tests
+npm test                        # run the 431 unit tests
 node demo/commands.js           # run a folding demo in the terminal
+node tools/browser-audit.js     # headless Chromium UI audit, needs Chrome and Node 22+
 ```
 
 Or open `index.html` for the interactive 3D viewer. Nothing to build, no
@@ -121,7 +148,7 @@ conformation ever seen by any replica is tracked throughout.
 
 ## Tests
 
-205 unit tests cover the RNG, vector math, the MJ matrix (symmetry, anchor
+431 unit tests cover the RNG, vector math, the MJ matrix (symmetry, anchor
 values, strongest pairs), sequence validation, bond angles and dihedrals,
 NeRF placement round trips, rotation matrices, Ramachandran regions, steric
 clashes, radius of gyration, PDB parsing and export (column layout, TER
@@ -129,7 +156,24 @@ records, chain breaks, alternate locations, multi-model files), every move
 type, occupancy-map integrity, Metropolis edge cases, option validation,
 simulated annealing, REMC exchange statistics, HP model behavior, the
 lattice to backbone pipeline, viewer security and accessibility markup, and
-a full fold to rebuild to analyze to export to reparse end to end run.
+a full fold to rebuild to analyze to export to reparse end to end run. The
+v2 lab suite adds 226 more tests: canonical SAW counts, self avoidance and
+unit step invariants under every lab move, energy translation, rotation,
+reversal and bound properties, exact enumeration against an independent
+brute force DFS, hand verified ground states, comparator determinism and
+optimality gaps, mutation delta-E recomputation, contact matrix symmetry
+and coding, SHA-256 against FIPS 180-4 vectors plus a platform crypto
+oracle at every padding boundary, canonical JSON key ordering, checksum
+tamper detection, CSV formula injection escaping, bookmark edge cases, and
+static checks on the shipped files (strict mode, no innerHTML sinks, no
+external loads, accessibility roles, CSP intact).
+
+`tools/browser-audit.js` additionally drives real headless Chromium over
+the DevTools protocol at 1440x900 and 390x844 (42 checks): page load, zero
+console and page errors, zero external requests, zero horizontal overflow,
+the comparator table, funnel and contact map SVGs, the mutation scan,
+checksummed audit verify and tamper flows, the URL hash bookmark, the self
+test runner and the view on stage bridge.
 
 ## Browser viewer
 
@@ -137,7 +181,10 @@ a full fold to rebuild to analyze to export to reparse end to end run.
 hand written canvas renderer. It folds chains in your browser with a worker
 driven progress bar, lets you scrub through the replica trace, inspect each
 residue's Ramachandran class, switch between HP and MJ potentials, and
-export PDB files from folded conformations.
+export PDB files from folded conformations. Below it, the HP workbench
+runs the algorithm comparator, folding funnel, contact map, mutation scan,
+checksummed audit exports, bookmarking and self tests described above, all
+offline with zero network requests.
 
 ## License
 

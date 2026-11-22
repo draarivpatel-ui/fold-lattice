@@ -1148,6 +1148,53 @@
   });
 
   // ---------------------------------------------------------------------
+  // bridge for the HP workbench: render a lattice conformation it found.
+  // coords is an array of integer lattice cells, aaSeq the matching amino
+  // acid sequence (H beads come across as A, P beads as S).
+  // ---------------------------------------------------------------------
+  window.foldlStage = {
+    showLatticeFold: function (coords, aaSeq, knownEnergy) {
+      if (!coords || !coords.length) { return; }
+      if (worker) { worker.terminate(); worker = null; }
+      state.running = false;
+      state.source = 'fold';
+      state.seq = aaSeq;
+      state.mode = 'hp';
+      // Keep the transport controls consistent with an idle viewer: the
+      // fold run is over and the shown conformation is exportable.
+      state.pdbAtoms = null;
+      foldBtn.disabled = false;
+      stopBtn.disabled = true;
+      pdbBtn.disabled = false;
+      var energy = typeof knownEnergy === 'number' ? knownEnergy : 0;
+      try {
+        var lf = folderFromCoords(coords.map(function (c) { return c.slice(); }));
+        var rec = F.reconstructLatticeBackbone(lf);
+        state.rebuilt = rec;
+        state.dihedrals = rec.dihedrals;
+      } catch (err) {
+        state.rebuilt = null;
+        state.dihedrals = null;
+      }
+      state.snapshots = [{
+        sweep: 0, energy: energy, coords: coords.map(function (c) { return c.slice(); }),
+        exchanges: 0, accepted: 0, proposed: 0
+      }];
+      state.scrub = 0;
+      state.selected = null;
+      state.result = null;
+      state.trace = null;
+      selectResidue(null);
+      colorSel.value = 'hydrophobic';
+      refreshDisplay();
+      drawTrace();
+      drawRama();
+      updateStats(state.snapshots[0]);
+      progressText.textContent = 'showing ' + aaSeq.length + ' residue HP fold from the comparator, energy ' + energy;
+    }
+  };
+
+  // ---------------------------------------------------------------------
   // render loop
   // ---------------------------------------------------------------------
   function loop() {

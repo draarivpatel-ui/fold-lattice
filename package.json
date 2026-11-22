@@ -1,7 +1,7 @@
 {
   "name": "fold-lattice",
-  "version": "1.0.0",
-  "description": "3D lattice protein folding with replica-exchange Monte Carlo, Ramachandran analysis and PDB export",
+  "version": "2.0.0",
+  "description": "3D lattice protein folding with replica-exchange Monte Carlo, HP workbench algorithm comparator, exact enumeration, Ramachandran analysis and PDB export",
   "main": "src/fold.js",
   "scripts": {
     "test": "node --test test/"
