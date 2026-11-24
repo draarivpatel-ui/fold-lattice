@@ -27,8 +27,15 @@ var VERSION = '1.0.0';
 // ---------------------------------------------------------------------------
 // Seeded random number generator (mulberry32). Deterministic across runs.
 // ---------------------------------------------------------------------------
+function validateSeed(seed) {
+  if (!Number.isInteger(seed) || seed < 0 || seed > 4294967295) {
+    throw new RangeError('seed must be an integer in [0, 4294967295]');
+  }
+  return seed;
+}
+
 function makeRng(seed) {
-  var t = seed >>> 0;
+  var t = validateSeed(seed) >>> 0;
   return function rng() {
     t = (t + 0x6D2B79F5) | 0;
     var z = t;
@@ -409,7 +416,9 @@ function parsePdb(text, options) {
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
     if (line.slice(0, 6) === 'ENDMDL') {
-      if (modelIndex > firstModel) { reading = false; }
+      if ((modelCount > 0 && modelIndex === firstModel) || (modelCount === 0 && atoms.length > 0)) {
+        reading = false;
+      }
       continue;
     }
     // MODEL records are counted to the end of file even though atoms are
@@ -531,11 +540,12 @@ function atomsToPdb(atoms, options) {
   }
   for (var i = 0; i < atoms.length; i++) {
     var a = atoms[i];
-    if (prevChain !== null && a.chainID !== prevChain) {
+    var chain = a.chainID || ' ';
+    if (prevChain !== null && chain !== prevChain) {
       out.push(terLine());
       serial++;
     }
-    prevChain = a.chainID || ' ';
+    prevChain = chain;
     prevResName = a.resName || '';
     prevResSeq = a.resSeq === undefined ? null : a.resSeq;
     prevICode = a.iCode && a.iCode !== ' ' ? a.iCode : null;
@@ -665,7 +675,7 @@ function computeDihedrals(atoms) {
     var key = a.chainID + ':' + a.resSeq + ':' + iCode;
     if (!byKey[key]) {
       byKey[key] = {
-        chainID: a.chainID, resSeq: a.resSeq, resName: a.resName,
+        chainID: a.chainID, resSeq: a.resSeq, iCode: iCode, resName: a.resName,
         N: null, CA: null, C: null
       };
       groups.push(byKey[key]);
@@ -679,8 +689,14 @@ function computeDihedrals(atoms) {
   // Consecutive groups count as bonded only when they share the chain and
   // residue numbering is continuous; otherwise there is a chain break.
   function bonded(g1, g2) {
-    return g1 && g2 && g1.chainID === g2.chainID &&
-      (g2.resSeq === g1.resSeq + 1);
+    if (!g1 || !g2 || g1.chainID !== g2.chainID) { return false; }
+    if (!Number.isFinite(g1.resSeq) || !Number.isFinite(g2.resSeq)) { return false; }
+    if (g2.resSeq === g1.resSeq + 1) { return true; }
+    if (g2.resSeq !== g1.resSeq) { return false; }
+    var a = g1.iCode || '';
+    var b = g2.iCode || '';
+    if (a === '' && b === 'A') { return true; }
+    return a.length === 1 && b.length === 1 && b.charCodeAt(0) === a.charCodeAt(0) + 1;
   }
   var out = [];
   for (var r = 0; r < groups.length; r++) {
@@ -1368,7 +1384,7 @@ function* remcGenerator(options) {
   var maxTemp = temperatureOption(opts.maxTemp, 2.5, 'maxTemp');
   if (maxTemp < minTemp) { throw new Error('maxTemp must be greater than or equal to minTemp'); }
   var yieldEvery = positiveIntOption(opts.yieldEvery, 25, 'yieldEvery');
-  var seed = opts.seed === undefined ? 12345 : opts.seed;
+  var seed = validateSeed(opts.seed === undefined ? 12345 : opts.seed);
   var rng = makeRng(seed);
   var temps = geometricTemps(replicas, minTemp, maxTemp);
   var folders = [];
@@ -1499,7 +1515,7 @@ function* annealingGenerator(options) {
   var T1 = temperatureOption(opts.T1, 0.05, 'T1', true);
   var cooling = opts.cooling === 'linear' ? 'linear' : 'geometric';
   var yieldEvery = positiveIntOption(opts.yieldEvery, 20, 'yieldEvery');
-  var seed = opts.seed === undefined ? 12345 : opts.seed;
+  var seed = validateSeed(opts.seed === undefined ? 12345 : opts.seed);
   var rng = makeRng(seed);
   var folder = new LatticeFolder(seq, { mode: mode });
   var accepted = 0, proposed = 0;
@@ -1620,6 +1636,7 @@ var foldl = {
   isHydrophobic: isHydrophobic,
   HP_MATRIX: HP_MATRIX,
   mjPairEnergy: mjPairEnergy,
+  validateSeed: validateSeed,
   makeRng: makeRng,
   vadd: vadd, vsub: vsub, vscale: vscale, vdot: vdot, vcross: vcross,
   vlen: vlen, vdist: vdist, vnorm: vnorm, veq: veq,

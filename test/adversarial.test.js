@@ -803,9 +803,8 @@ test('computeDihedrals keeps insertion coded residues as separate groups', () =>
   ].join('\n');
   const d = f.computeDihedrals(f.parsePdb(pdb).atoms);
   assert.strictEqual(d.length, 2);
-  // 10 and 10A share resSeq: not bonded, so phi/psi stay null.
-  assert.strictEqual(d[1].phi, null);
-  assert.strictEqual(d[0].psi, null);
+  assert.notStrictEqual(d[1].phi, null);
+  assert.notStrictEqual(d[0].psi, null);
 });
 
 test('folderToPdb honors a custom CA spacing scale', () => {
@@ -1056,4 +1055,71 @@ test('charts and legend expose text alternatives', () => {
   assert.match(html, /<canvas id="traceChart"[^>]*>[^<]+<\/canvas>/, 'trace fallback text');
   assert.match(html, /<canvas id="ramaChart"[^>]*>[^<]+<\/canvas>/, 'rama fallback text');
   assert.match(html, /id="legend" role="group" aria-label=/, 'legend is labelled');
+});
+
+test('atomsToPdb keeps a blank chain as one chain', () => {
+  const atoms = [
+    { name: 'CA', resName: 'ALA', resSeq: 1, xyz: [0, 0, 0], element: 'C' },
+    { name: 'CA', resName: 'ALA', resSeq: 2, xyz: [3.8, 0, 0], element: 'C' }
+  ];
+  const records = f.atomsToPdb(atoms).split('\n')
+    .filter(l => l.startsWith('ATOM') || l.startsWith('TER'))
+    .map(l => l.slice(0, 6).trim());
+  assert.deepStrictEqual(records, ['ATOM', 'ATOM', 'TER']);
+});
+
+test('parsePdb ignores stray ATOM records after the first ENDMDL', () => {
+  const atom = pdbAtomLine({ serial: 1, resSeq: 1, x: '   0.000', y: '   0.000', z: '   0.000' });
+  const stray = pdbAtomLine({ serial: 2, resSeq: 2, x: '   1.000', y: '   0.000', z: '   0.000' });
+  const second = pdbAtomLine({ serial: 3, resSeq: 1, x: '   2.000', y: '   0.000', z: '   0.000' });
+  const text = 'MODEL     1\n' + atom + '\nENDMDL\n' + stray + '\nMODEL     2\n' + second + '\nENDMDL\n';
+  const parsed = f.parsePdb(text);
+  assert.strictEqual(parsed.modelCount, 2);
+  assert.strictEqual(parsed.atoms.length, 1);
+  assert.strictEqual(parsed.atoms[0].serial, 1);
+});
+
+test('computeDihedrals bonds insertion coded neighbors in sequence order', () => {
+  const angles = [
+    { phi: -60, psi: -45, omega: 180 },
+    { phi: -60, psi: -45, omega: 180 },
+    { phi: -60, psi: -45, omega: 180 }
+  ];
+  const atoms = f.reconstructBackbone('AAA', angles).map((a) => {
+    const out = Object.assign({}, a);
+    if (out.resIndex === 1) { out.resSeq = 1; out.iCode = 'A'; }
+    if (out.resIndex === 2) { out.resSeq = 2; out.iCode = ' '; }
+    return out;
+  });
+  const ds = f.computeDihedrals(atoms);
+  assert.strictEqual(ds.length, 3);
+  assert.notStrictEqual(ds[0].psi, null, 'residue 1 should bond to insertion residue 1A');
+  assert.notStrictEqual(ds[1].phi, null, 'insertion residue 1A should bond back to residue 1');
+  assert.notStrictEqual(ds[1].omega, null, 'insertion residue 1A should have peptide omega');
+});
+
+test('makeRng rejects malformed seeds instead of silently coercing them', () => {
+  for (const bad of [NaN, Infinity, -Infinity, -1, 1.5, 4294967296]) {
+    assert.throws(() => f.makeRng(bad), RangeError, String(bad));
+  }
+  assert.doesNotThrow(() => f.makeRng(0));
+  assert.doesNotThrow(() => f.makeRng(4294967295));
+});
+
+test('shipped page carries skip, reduced motion, progress and button state accessibility', () => {
+  const html = read('index.html');
+  assert.match(html, /class="skip-link"/, 'skip link');
+  assert.match(html, /<main id="mainContent"/, 'skip target');
+  assert.match(html, /prefers-reduced-motion/, 'reduced motion media query');
+  assert.match(html, /id="progressWrap"[^>]*role="progressbar"/, 'progressbar role');
+  assert.match(html, /id="mutBtn"[^>]*disabled/, 'mutation button starts disabled');
+  assert.match(html, /id="auditJsonBtn"[^>]*disabled/, 'audit export starts disabled');
+  assert.match(html, /id="verifyBtn"[^>]*disabled/, 'verify button starts disabled');
+});
+
+test('contact map cells are keyboard operable', () => {
+  const app = read('lab-app.js');
+  assert.match(app, /tabindex', '0'|tabindex", "0"|setAttribute\('tabindex', '0'\)/, 'focusable cells');
+  assert.match(app, /cmapSvg\.addEventListener\('keydown'|cmapSvg\.onkeydown/, 'keyboard handler');
+  assert.match(app, /selectContactCell/, 'shared selection path');
 });

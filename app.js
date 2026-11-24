@@ -33,6 +33,7 @@
   var pdbBtn = $('pdbBtn');
   var errMsg = $('errMsg');
   var progressBar = $('progressBar');
+  var progressWrap = $('progressWrap');
   var progressText = $('progressText');
   var stEnergy = $('stEnergy');
   var stContacts = $('stContacts');
@@ -770,6 +771,12 @@
     });
   }
 
+  function setProgress(pct) {
+    var v = Math.max(0, Math.min(100, Math.round(pct)));
+    progressBar.style.width = v + '%';
+    progressWrap.setAttribute('aria-valuenow', String(v));
+  }
+
   function showError(text) {
     errMsg.textContent = text;
   }
@@ -817,7 +824,7 @@
     foldBtn.disabled = true;
     stopBtn.disabled = false;
     progressText.textContent = 'starting, seed ' + seed;
-    progressBar.style.width = '0%';
+    setProgress(0);
 
     // snapshot 0: the straight extended chain
     var straight = [];
@@ -887,7 +894,7 @@
         exchanges: d.exchanges, accepted: d.accepted, proposed: d.proposed
       });
       if (!state.userScrubbed) { state.scrub = state.snapshots.length - 1; }
-      progressBar.style.width = Math.round(100 * d.sweep / d.sweeps) + '%';
+      setProgress(100 * d.sweep / d.sweeps);
       progressText.textContent = 'sweep ' + d.sweep + ' of ' + d.sweeps +
         ', best energy ' + d.bestEnergy.toFixed(2) + ' RT';
       updateStats(state.snapshots[state.scrub]);
@@ -904,7 +911,7 @@
       drawRama();
       progressText.textContent = 'finished in ' + msg.data.elapsedMs + ' ms, best energy ' +
         msg.data.best.energy.toFixed(2) + ' RT, ' + msg.data.best.contactCount + ' contacts';
-      progressBar.style.width = '100%';
+      setProgress(100);
     } else if (msg.type === 'error') {
       showError('fold failed: ' + msg.message);
       finishRun();
@@ -1104,7 +1111,7 @@
       stopBtn.disabled = true;
       clearStats();
       progressText.textContent = 'showing imported PDB, ' + parsed.atoms.length + ' atoms';
-      progressBar.style.width = '0%';
+      setProgress(0);
       drawTrace();
       drawRama();
       showAll.value = 'yes';

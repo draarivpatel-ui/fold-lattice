@@ -67,6 +67,10 @@ function validateHpSequence(sequence) {
   return seq;
 }
 
+function seedOption(value, fallback) {
+  return F.validateSeed(value === undefined ? fallback : value);
+}
+
 // Occupancy keys; identical injective scheme to the main engine.
 var LKEY = 200001;
 var LOFF = 100000;
@@ -402,6 +406,9 @@ function runExact(options) {
   var seq = validateHpSequence(opts.sequence);
   var dim = validateDim(opts.dim === undefined ? 2 : opts.dim);
   var maxStates = opts.maxStates === undefined ? 3000000 : opts.maxStates;
+  if (!Number.isInteger(maxStates) || maxStates < 1) {
+    throw new RangeError('maxStates must be a positive integer');
+  }
   var t0 = Date.now();
   var bestE = Infinity;
   var bestCoords = null;
@@ -485,7 +492,7 @@ function runRandomWalk(options) {
   if (!Number.isInteger(samples) || samples < 1) {
     throw new RangeError('samples must be a positive integer');
   }
-  var rng = makeRng(opts.seed === undefined ? 1 : opts.seed);
+  var rng = makeRng(seedOption(opts.seed, 1));
   var t0 = Date.now();
   var best = null;
   var points = [];
@@ -527,7 +534,7 @@ function runGreedyPivot(options) {
   if (!Number.isInteger(maxIter) || maxIter < 0) {
     throw new RangeError('maxIter must be a nonnegative integer');
   }
-  var rng = makeRng(opts.seed === undefined ? 1 : opts.seed);
+  var rng = makeRng(seedOption(opts.seed, 1));
   var t0 = Date.now();
   var fold = foldState(seq, dim, randomSaw(seq.length, dim, rng));
   var trajectory = [snapshotMetrics(seq, fold.coords, dim, 0)];
@@ -588,7 +595,7 @@ function runMetropolis(options) {
   if (!Number.isFinite(temp) || temp < 0) {
     throw new RangeError('temperature must be a nonnegative finite number');
   }
-  var rng = makeRng(opts.seed === undefined ? 1 : opts.seed);
+  var rng = makeRng(seedOption(opts.seed, 1));
   var t0 = Date.now();
   var fold = foldState(seq, dim, straightCoords(seq.length));
   var best = { coords: cloneCoords(fold.coords), energy: fold.energy };
@@ -643,7 +650,7 @@ function runAnnealing(options) {
   var T1 = opts.T1 === undefined ? 0.05 : opts.T1;
   if (!Number.isFinite(T0) || T0 <= 0) { throw new RangeError('T0 must be positive'); }
   if (!Number.isFinite(T1) || T1 < 0) { throw new RangeError('T1 must be nonnegative'); }
-  var rng = makeRng(opts.seed === undefined ? 1 : opts.seed);
+  var rng = makeRng(seedOption(opts.seed, 1));
   var t0 = Date.now();
   var fold = foldState(seq, dim, straightCoords(seq.length));
   var best = { coords: cloneCoords(fold.coords), energy: fold.energy };
@@ -696,13 +703,13 @@ function compareAlgorithms(options) {
   var opts = options || {};
   var seq = validateHpSequence(opts.sequence);
   var dim = validateDim(opts.dim === undefined ? 2 : opts.dim);
-  var seed = opts.seed === undefined ? 1 : opts.seed;
+  var seed = seedOption(opts.seed, 1);
   var results = [];
   results.push(runRandomWalk({ sequence: seq, dim: dim, seed: seed, samples: opts.samples }));
-  results.push(runGreedyPivot({ sequence: seq, dim: dim, seed: seed + 1, maxIter: opts.greedyMaxIter }));
-  results.push(runMetropolis({ sequence: seq, dim: dim, seed: seed + 2, steps: opts.mcSteps, temperature: opts.temperature }));
+  results.push(runGreedyPivot({ sequence: seq, dim: dim, seed: (seed + 1) >>> 0, maxIter: opts.greedyMaxIter }));
+  results.push(runMetropolis({ sequence: seq, dim: dim, seed: (seed + 2) >>> 0, steps: opts.mcSteps, temperature: opts.temperature }));
   results.push(runAnnealing({
-    sequence: seq, dim: dim, seed: seed + 3,
+    sequence: seq, dim: dim, seed: (seed + 3) >>> 0,
     sweeps: opts.saSweeps, stepsPerSweep: opts.saStepsPerSweep,
     T0: opts.T0, T1: opts.T1
   }));
@@ -738,7 +745,7 @@ function sampleFunnel(seq, dim, count, seed) {
   if (!Number.isInteger(count) || count < 1) {
     throw new RangeError('count must be a positive integer');
   }
-  var rng = makeRng(seed === undefined ? 1 : seed);
+  var rng = makeRng(seedOption(seed, 1));
   var points = [];
   var lo = Infinity, hi = -Infinity;
   for (var i = 0; i < count; i++) {
@@ -766,6 +773,9 @@ function flipHp(ch) {
  */
 function mutationScan(seq, coords, dim) {
   var s = validateHpSequence(seq);
+  if (!isValidSaw(coords, dim) || coords.length !== s.length) {
+    throw new Error('coords must be a valid self avoiding walk matching the sequence length');
+  }
   var e0 = energyOf(s, coords, dim);
   var per = [];
   var destabilizing = 0, stabilizing = 0, neutral = 0;
@@ -805,6 +815,10 @@ var CMAP_SELF = 4;       // diagonal
  * { n, cells, hhCount, contactCount }
  */
 function contactMatrix(seq, coords, dim) {
+  var s = validateHpSequence(seq);
+  if (!isValidSaw(coords, dim) || coords.length !== s.length) {
+    throw new Error('coords must be a valid self avoiding walk matching the sequence length');
+  }
   var n = coords.length;
   var cells = new Array(n * n);
   for (var i = 0; i < n * n; i++) { cells[i] = CMAP_FAR; }
@@ -819,7 +833,7 @@ function contactMatrix(seq, coords, dim) {
       if (bonded) { code = CMAP_BONDED; }
       else {
         cc++;
-        var isHh = seq[a] === 'H' && seq[b] === 'H';
+        var isHh = s[a] === 'H' && s[b] === 'H';
         if (isHh) { hh++; }
         code = isHh ? CMAP_HH : CMAP_OTHER;
       }
@@ -950,6 +964,46 @@ function checksumPayload(payload) {
   return sha256Hex(canonicalize(payload));
 }
 
+function comparisonAuditPayload(cmp, scan) {
+  if (!cmp || typeof cmp !== 'object' || !Array.isArray(cmp.results)) {
+    throw new Error('comparison audit needs a comparator result object');
+  }
+  var results = cmp.results.map(function (r) {
+    if (!r || !r.best || !r.metrics) {
+      throw new Error('comparison audit result is missing best metrics');
+    }
+    return {
+      algorithm: r.algorithm,
+      label: r.label,
+      energy: r.best.energy,
+      contactCount: r.metrics.contactCount,
+      hhContacts: r.metrics.hhContacts,
+      rg: Math.round(r.metrics.rg * 10000) / 10000,
+      ree: Math.round(r.metrics.ree * 10000) / 10000,
+      optimalityGap: r.optimalityGap === undefined ? null : r.optimalityGap,
+      states: r.states === undefined ? null : r.states
+    };
+  });
+  return {
+    sequence: cmp.sequence,
+    dimension: cmp.dim,
+    seed: cmp.seed,
+    groundEnergy: cmp.exact && !cmp.exact.truncated ? cmp.exact.best.energy : null,
+    results: results,
+    mutationScan: scan ? {
+      algorithm: scan.algorithm,
+      e0: scan.e0,
+      destabilizing: scan.destabilizing,
+      stabilizing: scan.stabilizing,
+      neutral: scan.neutral,
+      worst: scan.worst,
+      perResidue: scan.perResidue
+    } : null,
+    modelDisclosure: 'Dill HP lattice model: simplified statistical physics toy, not atomistic prediction',
+    timingDisclosure: 'wall clock timings are excluded so this audit is deterministic for fixed inputs'
+  };
+}
+
 /**
  * Build a checksummed audit report. The checksum covers the canonicalized
  * payload only; it is an unkeyed tamper detection digest, not a signature.
@@ -972,6 +1026,10 @@ function verifyAuditReport(report) {
   }
   if (typeof report.checksum !== 'string' || !/^[0-9a-f]{64}$/.test(report.checksum)) {
     return { ok: false, reason: 'missing or malformed checksum' };
+  }
+  if (!Object.prototype.hasOwnProperty.call(report, 'payload') ||
+      !report.payload || typeof report.payload !== 'object') {
+    return { ok: false, reason: 'missing or malformed payload' };
   }
   var actual = checksumPayload(report.payload);
   if (actual !== report.checksum) {
@@ -1029,15 +1087,15 @@ function auditToCsv(report) {
   }
   lines.push(['meta', 'checksumAlgorithm', csvCell(report.checksumAlgorithm)].join(','));
   lines.push(['meta', 'checksum', csvCell(report.checksum)].join(','));
-  lines.push('algorithm,best_energy,contact_count,hh_contacts,radius_of_gyration,end_to_end,optimality_gap,wall_ms');
+  if (p.timingDisclosure) { lines.push(['meta', 'timingDisclosure', csvCell(p.timingDisclosure)].join(',')); }
+  lines.push('algorithm,best_energy,contact_count,hh_contacts,radius_of_gyration,end_to_end,optimality_gap');
   var results = p.results || [];
   for (var i = 0; i < results.length; i++) {
     var r = results[i];
     lines.push([
       csvCell(r.algorithm), csvCell(r.energy), csvCell(r.contactCount),
       csvCell(r.hhContacts), csvCell(r.rg), csvCell(r.ree),
-      csvCell(r.optimalityGap === null || r.optimalityGap === undefined ? 'n/a' : r.optimalityGap),
-      csvCell(r.ms)
+      csvCell(r.optimalityGap === null || r.optimalityGap === undefined ? 'n/a' : r.optimalityGap)
     ].join(','));
   }
   var mut = p.mutationScan;
@@ -1069,14 +1127,14 @@ function auditToMarkdown(report) {
   out.push('- checksum (' + mdEscape(report.checksumAlgorithm) + '):');
   out.push('  `' + report.checksum + '`');
   out.push('');
-  out.push('| algorithm | best E | contacts | H-H | R_g | R_ee | optimality gap | ms |');
-  out.push('|---|---|---|---|---|---|---|---|');
+  out.push('| algorithm | best E | contacts | H-H | R_g | R_ee | optimality gap |');
+  out.push('|---|---|---|---|---|---|---|');
   var results = p.results || [];
   for (var i = 0; i < results.length; i++) {
     var r = results[i];
     var gap = r.optimalityGap === null || r.optimalityGap === undefined ? 'n/a' : String(r.optimalityGap);
     out.push('| ' + mdEscape(r.algorithm) + ' | ' + r.energy + ' | ' + r.contactCount +
-      ' | ' + r.hhContacts + ' | ' + r.rg + ' | ' + r.ree + ' | ' + gap + ' | ' + r.ms + ' |');
+      ' | ' + r.hhContacts + ' | ' + r.rg + ' | ' + r.ree + ' | ' + gap + ' |');
   }
   var mut = p.mutationScan;
   if (mut && mut.perResidue) {
@@ -1090,6 +1148,7 @@ function auditToMarkdown(report) {
   }
   out.push('');
   out.push('The Dill HP lattice model is a simplified statistical physics toy model.');
+  if (p.timingDisclosure) { out.push(p.timingDisclosure + '.'); }
   return out.join('\n') + '\n';
 }
 
@@ -1113,10 +1172,7 @@ function encodeBookmark(opts) {
     throw new Error('sequence too long for a bookmark (max ' + BOOKMARK_MAX_SEQ + ')');
   }
   var dim = validateDim(opts.dim === undefined ? 2 : opts.dim);
-  var seed = Math.floor(opts.seed === undefined ? 1 : opts.seed);
-  if (!Number.isFinite(seed) || seed < 0 || seed > 4294967295) {
-    throw new Error('seed must be an integer between 0 and 4294967295');
-  }
+  var seed = seedOption(opts.seed, 1);
   return 'fold=' + seq + ':' + dim + 'd:' + seed;
 }
 
@@ -1337,6 +1393,7 @@ var lab = {
   sha256Hex: sha256Hex,
   canonicalize: canonicalize,
   checksumPayload: checksumPayload,
+  comparisonAuditPayload: comparisonAuditPayload,
   buildAuditReport: buildAuditReport,
   verifyAuditReport: verifyAuditReport,
   auditToJson: auditToJson,

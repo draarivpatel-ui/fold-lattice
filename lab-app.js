@@ -67,6 +67,15 @@
     auditJson: ''
   };
 
+  function setAuditControlsEnabled(enabled) {
+    auditJsonBtn.disabled = !enabled;
+    auditCsvBtn.disabled = !enabled;
+    auditMdBtn.disabled = !enabled;
+    bookmarkBtn.disabled = !enabled;
+    verifyBtn.disabled = !enabled;
+    tamperBtn.disabled = !enabled;
+  }
+
   // ---------------------------------------------------------------------
   // svg helpers
   // ---------------------------------------------------------------------
@@ -134,6 +143,8 @@
       return;
     }
     compareBtn.disabled = true;
+    mutBtn.disabled = true;
+    setAuditControlsEnabled(false);
     labStatus.textContent = 'running comparator...';
     // Let the status paint before the (fast but nonzero) synchronous bench.
     setTimeout(function () {
@@ -155,7 +166,7 @@
             if (cmp.results[i].best.energy < cmp.results[sel].best.energy) { sel = i; }
           }
         }
-        labState.funnelCloud = L.sampleFunnel(cmp.sequence, cmp.dim, 260, cmp.seed + 99);
+        labState.funnelCloud = L.sampleFunnel(cmp.sequence, cmp.dim, 260, (cmp.seed + 99) >>> 0);
         renderTable();
         selectResult(sel);
         var note = cmp.exactSkipped
@@ -237,6 +248,7 @@
       rows[i].className = parseInt(rows[i].getAttribute('data-i'), 10) === idx ? 'sel' : '';
     }
     var r = cmp.results[idx];
+    mutBtn.disabled = false;
     renderContactMap(r);
     renderFunnel();
     labState.mutationScan = null;
@@ -411,7 +423,10 @@
           x: padL + b * cell, y: padT + a * cell,
           width: cell - 1, height: cell - 1,
           fill: CMAP_COLORS[code], rx: 2,
-          'data-i': a, 'data-j': b
+          'data-i': a, 'data-j': b,
+          tabindex: a === 0 && b === 0 ? '0' : '-1',
+          role: 'button', focusable: 'true',
+          'aria-label': 'contact cell residues ' + (a + 1) + ' and ' + (b + 1)
         });
         var t = el('title');
         t.textContent = 'residues ' + (a + 1) + ' (' + seq[a] + ') and ' + (b + 1) + ' (' + seq[b] + ')';
@@ -428,13 +443,7 @@
     cmapInfo.textContent = seq.length + ' residues, ' + m.hhCount + ' non bonded H-H contacts (teal), ' +
       (m.contactCount - m.hhCount) + ' other contacts, energy ' + (-m.hhCount) +
       '. click a cell for pair details.';
-    cmapSvg.onclick = function (e) {
-      var target = e.target;
-      if (!target || !target.getAttribute) { return; }
-      var i = target.getAttribute('data-i');
-      var j = target.getAttribute('data-j');
-      if (i === null || j === null) { return; }
-      i = parseInt(i, 10); j = parseInt(j, 10);
+    function selectContactCell(target, i, j) {
       var code = m.cells[i * m.n + j];
       var kinds = {
         0: 'not adjacent', 1: 'chain bond', 2: 'non bonded H-H contact',
@@ -446,7 +455,45 @@
       for (var q = 0; q < marks.length; q++) { marks[q].classList.remove('sel'); }
       target.classList.add('sel');
       renderMutationHighlight(i, j);
+    }
+
+    function cellTarget(e) {
+      var target = e.target;
+      if (!target || !target.getAttribute) { return null; }
+      var i = target.getAttribute('data-i');
+      var j = target.getAttribute('data-j');
+      if (i === null || j === null) { return null; }
+      return { target: target, i: parseInt(i, 10), j: parseInt(j, 10) };
+    }
+
+    cmapSvg.onclick = function (e) {
+      var hit = cellTarget(e);
+      if (hit) { selectContactCell(hit.target, hit.i, hit.j); }
     };
+    cmapSvg.addEventListener('keydown', function (e) {
+      var hit = cellTarget(e);
+      if (!hit) { return; }
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectContactCell(hit.target, hit.i, hit.j);
+        return;
+      }
+      var di = 0, dj = 0;
+      if (e.key === 'ArrowUp') { di = -1; }
+      else if (e.key === 'ArrowDown') { di = 1; }
+      else if (e.key === 'ArrowLeft') { dj = -1; }
+      else if (e.key === 'ArrowRight') { dj = 1; }
+      else { return; }
+      e.preventDefault();
+      var ni = Math.max(0, Math.min(n - 1, hit.i + di));
+      var nj = Math.max(0, Math.min(n - 1, hit.j + dj));
+      var next = cmapSvg.querySelector('rect[data-i="' + ni + '"][data-j="' + nj + '"]');
+      if (next) {
+        hit.target.setAttribute('tabindex', '-1');
+        next.setAttribute('tabindex', '0');
+        next.focus();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------
@@ -529,41 +576,13 @@
   function buildAudit() {
     var cmp = labState.comparison;
     if (!cmp) { return; }
-    var payload = {
-      sequence: cmp.sequence,
-      dimension: cmp.dim,
-      seed: cmp.seed,
-      groundEnergy: cmp.exact && !cmp.exact.truncated ? cmp.exact.best.energy : null,
-      results: cmp.results.map(function (r) {
-        return {
-          algorithm: r.algorithm,
-          label: r.label,
-          energy: r.best.energy,
-          contactCount: r.metrics.contactCount,
-          hhContacts: r.metrics.hhContacts,
-          rg: Math.round(r.metrics.rg * 10000) / 10000,
-          ree: Math.round(r.metrics.ree * 10000) / 10000,
-          optimalityGap: r.optimalityGap,
-          states: r.states === undefined ? null : r.states,
-          ms: r.ms
-        };
-      }),
-      mutationScan: labState.mutationScan ? {
-        algorithm: labState.mutationScan.algorithm,
-        e0: labState.mutationScan.e0,
-        destabilizing: labState.mutationScan.destabilizing,
-        stabilizing: labState.mutationScan.stabilizing,
-        neutral: labState.mutationScan.neutral,
-        worst: labState.mutationScan.worst,
-        perResidue: labState.mutationScan.perResidue
-      } : null,
-      modelDisclosure: 'Dill HP lattice model: simplified statistical physics toy, not atomistic prediction'
-    };
+    var payload = L.comparisonAuditPayload(cmp, labState.mutationScan);
     labState.auditReport = L.buildAuditReport(payload);
     labState.auditJson = L.auditToJson(labState.auditReport);
     auditPreview.textContent = labState.auditJson;
     auditSum.textContent = 'sha256 ' + labState.auditReport.checksum;
     auditVerdict.textContent = '';
+    setAuditControlsEnabled(true);
   }
 
   function download(name, text, type) {

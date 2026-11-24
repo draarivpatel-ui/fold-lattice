@@ -632,3 +632,55 @@ test('index.html workbench markup carries accessibility roles', () => {
   assert.match(html, /id="labErr"[^>]*role="alert"/);
   assert.match(html, /id="auditVerdict"[^>]*aria-live="polite"/);
 });
+
+test('lab algorithms reject malformed seeds', () => {
+  for (const bad of [NaN, Infinity, -Infinity, -1, 1.5, 4294967296]) {
+    assert.throws(() => L.runMetropolis({ sequence: 'HPPH', dim: 2, steps: 10, seed: bad }), RangeError, String(bad));
+    assert.throws(() => L.compareAlgorithms({ sequence: 'HPPH', dim: 2, seed: bad, samples: 10, mcSteps: 100, saSweeps: 5 }), RangeError, String(bad));
+  }
+  assert.throws(() => L.encodeBookmark({ sequence: 'HPPH', dim: 2, seed: 1.5 }), /seed/);
+});
+
+test('mutation scan and contact matrix reject malformed conformations', () => {
+  const overlapping = [[0, 0, 0], [0, 0, 0], [1, 0, 0], [2, 0, 0]];
+  assert.throws(() => L.mutationScan('HPPH', overlapping, 2), /valid self avoiding/);
+  assert.throws(() => L.contactMatrix('HPPH', overlapping, 2), /valid self avoiding/);
+  const broken = [[0, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0]];
+  assert.throws(() => L.mutationScan('HPPH', broken, 2), /valid self avoiding/);
+});
+
+test('runExact validates its state budget', () => {
+  for (const bad of [NaN, Infinity, 0, -2, 1.5]) {
+    assert.throws(() => L.runExact({ sequence: 'HPPH', dim: 2, maxStates: bad }), RangeError, String(bad));
+  }
+});
+
+test('comparisonAuditPayload strips wall clock timings for deterministic audits', () => {
+  assert.strictEqual(typeof L.comparisonAuditPayload, 'function');
+  const cmp = L.compareAlgorithms({
+    sequence: 'HPPHPH', dim: 2, seed: 31, samples: 10, mcSteps: 100,
+    saSweeps: 5, includeExact: false
+  });
+  const clone = JSON.parse(JSON.stringify(cmp));
+  clone.results.forEach((r, i) => { r.ms = 1000 + i * 17; });
+  const a = L.comparisonAuditPayload(cmp, null);
+  const b = L.comparisonAuditPayload(clone, null);
+  assert.deepStrictEqual(a, b);
+  for (const r of a.results) {
+    assert.ok(!Object.prototype.hasOwnProperty.call(r, 'ms'), 'wall clock ms leaked into audit payload');
+  }
+  const r1 = L.buildAuditReport(a);
+  const r2 = L.buildAuditReport(b);
+  assert.strictEqual(r1.checksum, r2.checksum);
+});
+
+test('verifyAuditReport rejects a report with no payload', () => {
+  const bare = { checksum: L.checksumPayload(null) };
+  assert.strictEqual(L.verifyAuditReport(bare).ok, false);
+});
+
+test('contactMatrix normalizes lowercase HP sequences before scoring', () => {
+  const square = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]];
+  const m = L.contactMatrix('hpph', square, 2);
+  assert.strictEqual(m.hhCount, 1);
+});

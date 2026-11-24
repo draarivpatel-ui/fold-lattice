@@ -151,15 +151,30 @@
   .num { width: 100%; }
   .controls input[type="number"] { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; width: 100%; }
   rect.sel { stroke: #ffffff; stroke-width: 1.5; }
+  .lab rect[tabindex]:focus { stroke: #ffffff; stroke-width: 1.5; }
+  .skip-link {
+    position: absolute; left: 12px; top: -48px; z-index: 20;
+    background: var(--accent); color: #08131a; padding: 8px 12px;
+    border-radius: 6px; font-weight: 700; transition: top 120ms linear;
+  }
+  .skip-link:focus { top: 8px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 </style>
 </head>
 <body>
+<a class="skip-link" href="#mainContent">Skip to main content</a>
 <header>
   <h1>fold-lattice</h1>
   <span class="ver" id="verTag"></span>
 </header>
 
-<main>
+<main id="mainContent">
   <section class="card" id="stageWrap">
     <h2>3D conformation</h2>
     <canvas id="stage" width="800" height="480" role="img" tabindex="0" aria-label="3D view of the protein conformation. Drag or use arrow keys to rotate, plus and minus to zoom.">A 3D view of the protein conformation; use the residue ribbon below to inspect residues.</canvas>
@@ -215,7 +230,7 @@
       <button id="pdbBtn" disabled>Export PDB</button>
     </div>
     <div class="err" id="errMsg" role="alert"></div>
-    <div id="progressWrap"><div id="progressBar"></div></div>
+    <div id="progressWrap" role="progressbar" aria-label="folding run progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progressBar"></div></div>
     <div id="progressText" role="status" aria-live="polite">idle</div>
     <div class="stats">
       <div class="stat"><div class="k">energy</div><div class="v" id="stEnergy">0.00 <small>RT</small></div></div>
@@ -310,7 +325,7 @@
 
   <section class="card controls" id="mutCard">
     <h2>Mutation stress scan</h2>
-    <div class="btnrow"><button id="mutBtn">Scan H to P and P to H</button></div>
+    <div class="btnrow"><button id="mutBtn" disabled>Scan H to P and P to H</button></div>
     <svg id="mutSvg" class="lab" role="img" aria-label="bar chart of per residue point mutation energy deltas"></svg>
     <div class="labInfo" id="mutInfo">select a conformation, then scan single point mutations</div>
   </section>
@@ -318,14 +333,14 @@
   <section class="card controls" id="auditCard">
     <h2>Audit export and self tests</h2>
     <div class="btnrow">
-      <button id="auditJsonBtn">JSON audit</button>
-      <button id="auditCsvBtn">CSV audit</button>
-      <button id="auditMdBtn">Markdown audit</button>
-      <button id="bookmarkBtn">Bookmark URL</button>
+      <button id="auditJsonBtn" disabled>JSON audit</button>
+      <button id="auditCsvBtn" disabled>CSV audit</button>
+      <button id="auditMdBtn" disabled>Markdown audit</button>
+      <button id="bookmarkBtn" disabled>Bookmark URL</button>
     </div>
     <div class="btnrow">
-      <button id="verifyBtn">Verify checksum</button>
-      <button id="tamperBtn">Tamper check</button>
+      <button id="verifyBtn" disabled>Verify checksum</button>
+      <button id="tamperBtn" disabled>Tamper check</button>
       <button id="selfTestBtn">Run self-tests</button>
     </div>
     <div id="auditSum" aria-label="report sha256 checksum"></div>

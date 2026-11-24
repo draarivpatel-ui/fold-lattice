@@ -854,7 +854,7 @@ test('auditToCsv emits meta algorithm and mutation sections', () => {
   const csv = L.auditToCsv(report);
   assert.match(csv, /section,field,value/);
   assert.match(csv, /algorithm,best_energy,contact_count/);
-  assert.match(csv, /exact,-5,7,5,1.4,2,0,3/);
+  assert.match(csv, /exact,-5,7,5,1.4,2,0\n/);
   assert.match(csv, /mutation_index,from,to,delta_e/);
   assert.match(csv, /0,H,P,1/);
 });
