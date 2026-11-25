@@ -239,7 +239,7 @@
       } else if (cm === 'element') {
         hex = null; // resolved per atom below
       } else {
-        hex = n > 1 ? hslHex(300 * i / (n - 1), 0.72, 0.62) : hslHex(180, 0.72, 0.62);
+        hex = n > 1 ? hslHex(300 * i / (n - 1), 0.72, 0.68) : hslHex(180, 0.72, 0.68);
       }
       residueRgb.push(hex ? hexToRgb(hex) : null);
     }
@@ -478,8 +478,8 @@
     if (!state.points.length) { legend.style.display = 'none'; return; }
     if (cm === 'sequence') {
       html = '<div class="row"><span class="swatch" style="width:60px;background:linear-gradient(90deg,' +
-        hslHex(0, 0.72, 0.62) + ',' + hslHex(75, 0.72, 0.62) + ',' + hslHex(150, 0.72, 0.62) + ',' +
-        hslHex(225, 0.72, 0.62) + ',' + hslHex(300, 0.72, 0.62) + ')"></span>N terminus to C terminus</div>';
+        hslHex(0, 0.72, 0.68) + ',' + hslHex(75, 0.72, 0.68) + ',' + hslHex(150, 0.72, 0.68) + ',' +
+        hslHex(225, 0.72, 0.68) + ',' + hslHex(300, 0.72, 0.68) + ')"></span>N terminus to C terminus</div>';
     } else if (cm === 'hydrophobic') {
       html = sw(HYDRO_COLOR, 'hydrophobic (ACFILMVWY)') + sw(POLAR_COLOR, 'polar');
     } else if (cm === 'ramachandran') {
