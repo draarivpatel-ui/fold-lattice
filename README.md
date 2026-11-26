@@ -64,7 +64,7 @@ conformation can be shown on the original 3D stage.
 ## Quick start
 
 ```bash
-npm test                        # run the 431 unit tests
+npm test                        # run the 447 unit tests
 node demo/commands.js           # run a folding demo in the terminal
 node tools/browser-audit.js     # headless Chromium UI audit, needs Chrome and Node 22+
 ```
@@ -148,7 +148,7 @@ conformation ever seen by any replica is tracked throughout.
 
 ## Tests
 
-431 unit tests cover the RNG, vector math, the MJ matrix (symmetry, anchor
+447 unit tests cover the RNG, vector math, the MJ matrix (symmetry, anchor
 values, strongest pairs), sequence validation, bond angles and dihedrals,
 NeRF placement round trips, rotation matrices, Ramachandran regions, steric
 clashes, radius of gyration, PDB parsing and export (column layout, TER
