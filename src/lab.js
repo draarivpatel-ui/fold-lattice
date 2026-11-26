@@ -1063,8 +1063,10 @@ function csvCell(value) {
   var s = value === null || value === undefined ? '' : String(value);
   // A leading formula character makes a dangerous cell, except on a plain
   // number like -5 or +3.5 which a spreadsheet reads as a value anyway.
-  var plainNumber = /^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(s);
-  var danger = !plainNumber && /^[=+\-@\t\v\f\r ]/.test(s);
+  var lead = (/^[\s\p{Cf}\p{Cc}]*/u.exec(s) || [''])[0];
+  var first = s.charAt(lead.length);
+  var plainNumber = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(s.slice(lead.length));
+  var danger = lead.length > 0 || (first !== '' && '=+-@'.indexOf(first) !== -1 && !(first === '-' && plainNumber));
   if (danger) { s = "'" + s; }
   if (/[",\r\n]/.test(s) || danger || s !== s.trim()) {
     return '"' + s.replace(/"/g, '""') + '"';

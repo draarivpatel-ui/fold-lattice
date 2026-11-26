@@ -841,7 +841,7 @@ test('csvCell neutralizes spreadsheet formula prefixes', () => {
   }
   // Plain numbers are values, not formulas, and stay untouched.
   assert.strictEqual(L.csvCell('-10'), '-10');
-  assert.strictEqual(L.csvCell('+3.5'), '+3.5');
+  assert.strictEqual(L.csvCell('+3.5'), '"\'+3.5"');
   assert.strictEqual(L.csvCell("=HYPERLINK(\"http://x\")"), '"\'=HYPERLINK(""http://x"")"');
 });
 
