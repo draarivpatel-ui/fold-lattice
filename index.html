@@ -166,6 +166,245 @@
       transition-duration: 0.01ms !important;
     }
   }
+
+@media print {
+  @page { margin: 12mm; }
+
+  :root,
+  html[data-theme],
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #fff;
+    --panel: #fff;
+    --panel2: #fff;
+    --line: #777;
+    --text: #111;
+    --muted: #444;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    transition: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+
+  body {
+    font-size: 11pt;
+  }
+
+  header,
+  nav,
+  .top,
+  .bar,
+  .masthead,
+  .bench__live {
+    position: static !important;
+  }
+
+  .skip,
+  .skip-link,
+  nav,
+  .nav,
+  .masthead__nav,
+  .panel-nav,
+  .site-nav,
+  [role="tablist"],
+  button,
+  input,
+  select,
+  textarea,
+  .btn,
+  .button,
+  .btn-row,
+  .button-row,
+  .actions,
+  .controls,
+  .control-panel,
+  .toolbar,
+  .chips,
+  .chip-row,
+  .export-actions,
+  .report-actions,
+  .header-actions,
+  .hero-actions,
+  .lesson-nav,
+  .sample-controls,
+  .window-controls,
+  .insight-controls,
+  .lab-actions,
+  .lab-controls,
+  .lab-btn-row,
+  .lab-export-btns,
+  .transport-strip,
+  .debug-control-row,
+  .dip-panel,
+  .keypad,
+  .hw-controls,
+  .layer-controls,
+  .net-controls,
+  .viewport-toolbar,
+  .inspector-toolbar,
+  .lab-toolbar,
+  .screen-tabs,
+  .protocol-tabs,
+  .refresh-controls,
+  .bezel-actions,
+  .controls-column,
+  .form-grid,
+  .brief-actions,
+  .presets,
+  .add,
+  .chans,
+  .row-actions,
+  .maps-actions {
+    display: none !important;
+  }
+
+  main,
+  .main,
+  .layout,
+  .bench,
+  .app,
+  .wrap,
+  .shell,
+  .workbench,
+  .workbench-grid,
+  .workbench-shell,
+  .studio-grid,
+  .main-grid,
+  .bench-grid,
+  .bench__grid,
+  .inspector__grid,
+  .sim__grid,
+  .acoustics__grid,
+  .container,
+  .frame,
+  .grid {
+    display: block !important;
+    max-width: none !important;
+    width: auto !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .panel,
+  .card,
+  .module,
+  .module-block,
+  .panel-card,
+  .card-panel,
+  .lab-card,
+  .telemetry-card,
+  .env-card,
+  .recipe-card,
+  .ledger-doc,
+  .kpi,
+  .move,
+  .bench-group,
+  .file,
+  .print-panel {
+    background: #fff !important;
+    color: #111 !important;
+    border-color: #777 !important;
+    box-shadow: none !important;
+  }
+
+  .table-scroll,
+  .tbl-scroll,
+  .graph-scroll,
+  .table-wrap,
+  .lab-table-scroll,
+  .lab-wrap-scroll,
+  .trace-table-wrap,
+  .scroll,
+  .diff-wrap,
+  .trace,
+  .log,
+  .log-list,
+  .code,
+  .prompt-preview,
+  .lab-preview,
+  .scad-preview,
+  .source,
+  .report,
+  .st-pre,
+  .st-tables,
+  .self-test-list,
+  .lab-selftest,
+  .lab-selftest-list,
+  .diag-list,
+  .matrix-wrap,
+  .wave-wrap,
+  .decoded,
+  .json-area,
+  .schema-block,
+  .auditPreview,
+  #auditPreview,
+  #selfTestList,
+  #labTableWrap,
+  .tw {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  table {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: 8.5pt;
+  }
+
+  th,
+  td {
+    overflow-wrap: anywhere;
+    padding: 3px 5px !important;
+  }
+
+  tr,
+  .panel,
+  .card,
+  .module-block,
+  .metric,
+  .stat {
+    break-inside: avoid;
+  }
+
+  pre,
+  code {
+    color: #111 !important;
+  }
+
+  pre {
+    max-height: none !important;
+    overflow: visible !important;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere !important;
+    background: #fff !important;
+    border-color: #777 !important;
+  }
+
+  canvas,
+  svg {
+    max-width: 100% !important;
+  }
+
+  a {
+    color: #111 !important;
+  }
+
+}
+
 </style>
 </head>
 <body>
